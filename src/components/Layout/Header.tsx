@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Menu, Bell, Search, User } from 'lucide-react';
+import NotificationDrawer from '@/components/NotificationDrawer';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -6,6 +8,16 @@ interface HeaderProps {
 }
 
 export default function Header({ onToggleSidebar, title }: HeaderProps) {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  const toggleDrawer = () => {
+    setIsDrawerOpen(prev => !prev);
+  };
+
+  const closeDrawer = () => {
+    setIsDrawerOpen(false);
+  };
+
   return (
     <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 sticky top-0 z-10">
       <div className="flex items-center gap-4">
@@ -28,7 +40,11 @@ export default function Header({ onToggleSidebar, title }: HeaderProps) {
           />
         </div>
 
-        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative">
+        <button
+          onClick={toggleDrawer}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative"
+          aria-label="消息通知"
+        >
           <Bell className="w-5 h-5 text-gray-600" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full"></span>
         </button>
@@ -43,6 +59,8 @@ export default function Header({ onToggleSidebar, title }: HeaderProps) {
           </div>
         </div>
       </div>
+
+      <NotificationDrawer isOpen={isDrawerOpen} onClose={closeDrawer} />
     </header>
   );
 }

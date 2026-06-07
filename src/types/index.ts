@@ -121,3 +121,14 @@ export interface DashboardStats {
   totalDamageRecords: number;
   pendingMaintenance: number;
 }
+
+export type NotificationType = 'rental' | 'maintenance' | 'damage' | 'inventory' | 'system';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  description: string;
+  read: boolean;
+  createdAt: string;
+}
