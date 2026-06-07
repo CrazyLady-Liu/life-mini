@@ -4,7 +4,7 @@ import { useAppStore } from '@/store/useAppStore';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import { formatDate } from '@/utils/format';
-import type { Supplier } from '../types';
+import type { Supplier } from '@/types';
 
 export default function SuppliersPage() {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier, equipments } = useAppStore();

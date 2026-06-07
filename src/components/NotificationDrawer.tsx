@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { X, Bell, Check, CheckCheck, ClipboardList, Wrench, AlertTriangle, Warehouse, Info } from 'lucide-react';
+import { useEffect } from 'react';
+import { X, Bell, CheckCheck, ClipboardList, Wrench, AlertTriangle, Warehouse, Info } from 'lucide-react';
 import type { Notification, NotificationType } from '@/types';
 import { formatDateTime } from '@/utils/format';
 import { generateId } from '@/utils/format';
@@ -7,9 +7,12 @@ import { generateId } from '@/utils/format';
 interface NotificationDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  notifications: Notification[];
+  onMarkAsRead: (id: string) => void;
+  onMarkAllAsRead: () => void;
 }
 
-const mockNotifications: Notification[] = [
+export const mockNotifications: Notification[] = [
   {
     id: generateId(),
     type: 'rental',
@@ -68,9 +71,13 @@ const typeColors: Record<NotificationType, string> = {
   system: 'bg-gray-100 text-gray-600',
 };
 
-export default function NotificationDrawer({ isOpen, onClose }: NotificationDrawerProps) {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
-
+export default function NotificationDrawer({
+  isOpen,
+  onClose,
+  notifications,
+  onMarkAsRead,
+  onMarkAllAsRead,
+}: NotificationDrawerProps) {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   useEffect(() => {
@@ -88,16 +95,6 @@ export default function NotificationDrawer({ isOpen, onClose }: NotificationDraw
       document.body.style.overflow = '';
     };
   }, [isOpen, onClose]);
-
-  const handleMarkAsRead = (id: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    );
-  };
-
-  const handleMarkAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  };
 
   if (!isOpen) return null;
 
@@ -133,7 +130,7 @@ export default function NotificationDrawer({ isOpen, onClose }: NotificationDraw
           <span className="text-sm font-medium text-gray-700">全部通知</span>
           {unreadCount > 0 && (
             <button
-              onClick={handleMarkAllAsRead}
+              onClick={onMarkAllAsRead}
               className="text-sm text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1"
             >
               <CheckCheck className="w-4 h-4" />
@@ -158,7 +155,7 @@ export default function NotificationDrawer({ isOpen, onClose }: NotificationDraw
                     className={`px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer ${
                       !notification.read ? 'bg-emerald-50/50' : ''
                     }`}
-                    onClick={() => handleMarkAsRead(notification.id)}
+                    onClick={() => onMarkAsRead(notification.id)}
                   >
                     <div className="flex gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${typeColors[notification.type]}`}>

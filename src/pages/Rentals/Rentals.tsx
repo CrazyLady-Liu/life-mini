@@ -5,7 +5,7 @@ import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import { formatCurrency, formatDate } from '@/utils/format';
-import type { Rental } from '../types';
+import type { Rental } from '@/types';
 
 export default function RentalsPage() {
   const { rentals, equipments, customers, addRental, returnRental, updateRental } = useAppStore();

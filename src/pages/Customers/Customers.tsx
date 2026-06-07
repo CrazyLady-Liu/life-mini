@@ -4,7 +4,7 @@ import { useAppStore } from '@/store/useAppStore';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import { formatDate } from '@/utils/format';
-import type { Customer } from '../types';
+import type { Customer } from '@/types';
 
 export default function CustomersPage() {
   const { customers, addCustomer, updateCustomer, deleteCustomer } = useAppStore();

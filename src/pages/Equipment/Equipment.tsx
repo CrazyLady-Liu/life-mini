@@ -5,7 +5,7 @@ import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import { formatCurrency, formatDate, equipmentCategories } from '@/utils/format';
-import type { Equipment } from '../types';
+import type { Equipment } from '@/types';
 
 export default function EquipmentPage() {
   const { equipments, suppliers, addEquipment, updateEquipment, deleteEquipment } = useAppStore();

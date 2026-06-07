@@ -1,7 +1,7 @@
 export const exportToCSV = <T extends Record<string, any>>(
   data: T[],
   filename: string,
-  columns: { key: keyof T; label: string }[]
+  columns: { key: string; label: string }[]
 ): void => {
   const headerRow = columns.map((col) => col.label).join(',');
   const dataRows = data.map((row) =>

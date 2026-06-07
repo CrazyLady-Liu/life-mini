@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Menu, Bell, Search, User } from 'lucide-react';
-import NotificationDrawer from '@/components/NotificationDrawer';
+import NotificationDrawer, { mockNotifications } from '@/components/NotificationDrawer';
+import type { Notification } from '@/types';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -9,6 +10,9 @@ interface HeaderProps {
 
 export default function Header({ onToggleSidebar, title }: HeaderProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const toggleDrawer = () => {
     setIsDrawerOpen(prev => !prev);
@@ -16,6 +20,16 @@ export default function Header({ onToggleSidebar, title }: HeaderProps) {
 
   const closeDrawer = () => {
     setIsDrawerOpen(false);
+  };
+
+  const handleMarkAsRead = (id: string) => {
+    setNotifications(prev =>
+      prev.map(n => (n.id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const handleMarkAllAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
   return (
@@ -46,7 +60,9 @@ export default function Header({ onToggleSidebar, title }: HeaderProps) {
           aria-label="消息通知"
         >
           <Bell className="w-5 h-5 text-gray-600" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full"></span>
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full"></span>
+          )}
         </button>
 
         <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
@@ -60,7 +76,13 @@ export default function Header({ onToggleSidebar, title }: HeaderProps) {
         </div>
       </div>
 
-      <NotificationDrawer isOpen={isDrawerOpen} onClose={closeDrawer} />
+      <NotificationDrawer
+        isOpen={isDrawerOpen}
+        onClose={closeDrawer}
+        notifications={notifications}
+        onMarkAsRead={handleMarkAsRead}
+        onMarkAllAsRead={handleMarkAllAsRead}
+      />
     </header>
   );
 }

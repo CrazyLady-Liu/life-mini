@@ -5,7 +5,7 @@ import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import { formatDate } from '@/utils/format';
-import type { EquipmentStatus, InventoryCheckStatus } from '../types';
+import type { EquipmentStatus, InventoryCheckStatus } from '@/types';
 
 export default function InventoryPage() {
   const {
