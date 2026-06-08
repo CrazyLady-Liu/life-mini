@@ -40,11 +40,18 @@ import {
   ShieldAlert,
   Zap,
 } from 'lucide-react';
+import DrillDownModal from '@/components/DrillDownModal';
+import type { DrillDownContext } from '@/components/DrillDownModal';
 
 export default function UsageStatsPage() {
   const { equipments, rentals, customers, damageRecords, maintenances } = useAppStore();
   const [timeRange, setTimeRange] = useState('all');
   const [activeTab, setActiveTab] = useState<'usage' | 'health'>('usage');
+  const [drillContext, setDrillContext] = useState<DrillDownContext>({
+    level: 'monthly',
+    title: '',
+  });
+  const [isDrillOpen, setIsDrillOpen] = useState(false);
 
   const healthScores = useMemo(() => {
     return calculateAllHealthScores(equipments, damageRecords, maintenances);
@@ -62,6 +69,7 @@ export default function UsageStatsPage() {
         name: eq.name,
         使用次数: eq.usageCount,
         category: eq.category,
+        id: eq.id,
       }));
   }, [equipments]);
 
@@ -84,6 +92,29 @@ export default function UsageStatsPage() {
   }, [equipments]);
 
   const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#64748b'];
+
+  const handleDrillDown = (context: DrillDownContext) => {
+    setDrillContext(context);
+    setIsDrillOpen(true);
+  };
+
+  const handleDrillUp = () => {
+    const levels: DrillDownContext['level'][] = [
+      'monthly',
+      'category',
+      'equipment',
+      'rentalDetail',
+      'damageDetail',
+      'maintenanceDetail',
+    ];
+    const currentIndex = levels.indexOf(drillContext.level);
+    if (currentIndex > 0) {
+      const newLevel = levels[currentIndex - 1];
+      setDrillContext({ ...drillContext, level: newLevel });
+    } else {
+      setIsDrillOpen(false);
+    }
+  };
 
   const rentalTrend = useMemo(() => {
     const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
@@ -252,22 +283,40 @@ export default function UsageStatsPage() {
       {activeTab === 'usage' ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-5 text-white">
+            <div
+              className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-5 text-white cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5"
+              onClick={() =>
+                handleDrillDown({
+                  level: 'monthly',
+                  title: '月度使用明细',
+                })
+              }
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-emerald-100 text-sm">累计使用次数</p>
                   <p className="text-3xl font-bold mt-1">{totalUsageCount}</p>
+                  <p className="text-emerald-200 text-xs mt-2">点击下钻 →</p>
                 </div>
                 <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
                   <TrendingUp className="w-6 h-6" />
                 </div>
               </div>
             </div>
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white">
+            <div
+              className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5"
+              onClick={() =>
+                handleDrillDown({
+                  level: 'category',
+                  title: '装备分类',
+                })
+              }
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-blue-100 text-sm">装备总数</p>
                   <p className="text-3xl font-bold mt-1">{equipments.length}</p>
+                  <p className="text-blue-200 text-xs mt-2">点击下钻 →</p>
                 </div>
                 <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
                   <Package className="w-6 h-6" />
@@ -285,13 +334,25 @@ export default function UsageStatsPage() {
                 </div>
               </div>
             </div>
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white">
+            <div
+              className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5"
+              onClick={() =>
+                mostUsedEquipment &&
+                handleDrillDown({
+                  level: 'equipment',
+                  title: mostUsedEquipment.name,
+                  equipmentId: mostUsedEquipment.id,
+                  equipmentName: mostUsedEquipment.name,
+                })
+              }
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-purple-100 text-sm">最热门装备</p>
                   <p className="text-xl font-bold mt-1 truncate">
                     {mostUsedEquipment?.name || '-'}
                   </p>
+                  <p className="text-purple-200 text-xs mt-2">点击查看详情 →</p>
                 </div>
                 <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
                   <Trophy className="w-6 h-6" />
@@ -301,11 +362,38 @@ export default function UsageStatsPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">租赁收入趋势</h3>
+            <div
+              className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() =>
+                handleDrillDown({
+                  level: 'monthly',
+                  title: '月度租赁明细',
+                })
+              }
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">租赁收入趋势</h3>
+                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                  点击下钻 →
+                </span>
+              </div>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={rentalTrend}>
+                  <BarChart
+                    data={rentalTrend}
+                    onClick={(data) => {
+                      if (data && data.activePayload && data.activePayload[0]) {
+                        const item = data.activePayload[0].payload;
+                        handleDrillDown({
+                          level: 'monthly',
+                          title: item.name,
+                          month: item.name,
+                          monthIndex: item.monthIndex,
+                          year: item.year,
+                        });
+                      }
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="#9ca3af" />
                     <YAxis yAxisId="left" tick={{ fontSize: 12 }} stroke="#9ca3af" />
@@ -322,15 +410,40 @@ export default function UsageStatsPage() {
                         return [value, name];
                       }}
                     />
-                    <Bar yAxisId="left" dataKey="租赁次数" fill="#10b981" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="right" dataKey="收入" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="租赁次数"
+                      fill="#10b981"
+                      radius={[4, 4, 0, 0]}
+                      className="cursor-pointer hover:opacity-80"
+                    />
+                    <Bar
+                      yAxisId="right"
+                      dataKey="收入"
+                      fill="#f59e0b"
+                      radius={[4, 4, 0, 0]}
+                      className="cursor-pointer hover:opacity-80"
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">装备分类使用占比</h3>
+            <div
+              className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() =>
+                handleDrillDown({
+                  level: 'category',
+                  title: '装备分类使用',
+                })
+              }
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">装备分类使用占比</h3>
+                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                  点击下钻 →
+                </span>
+              </div>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -344,9 +457,20 @@ export default function UsageStatsPage() {
                       dataKey="使用次数"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       labelLine={false}
+                      onClick={(entry) => {
+                        handleDrillDown({
+                          level: 'category',
+                          title: entry.name,
+                          category: entry.name,
+                        });
+                      }}
                     >
                       {categoryStats.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                          className="cursor-pointer hover:opacity-80"
+                        />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -357,11 +481,32 @@ export default function UsageStatsPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900 mb-6">装备使用次数排名</h3>
+            <div
+              className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">装备使用次数排名</h3>
+                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                  点击下钻 →
+                </span>
+              </div>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topEquipments} layout="vertical">
+                  <BarChart
+                    data={topEquipments}
+                    layout="vertical"
+                    onClick={(data) => {
+                      if (data && data.activePayload && data.activePayload[0]) {
+                        const item = data.activePayload[0].payload;
+                        handleDrillDown({
+                          level: 'equipment',
+                          title: item.name,
+                          equipmentId: item.id,
+                          equipmentName: item.name,
+                        });
+                      }
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis type="number" tick={{ fontSize: 12 }} stroke="#9ca3af" />
                     <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 12 }} stroke="#9ca3af" />
@@ -373,7 +518,12 @@ export default function UsageStatsPage() {
                         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
                       }}
                     />
-                    <Bar dataKey="使用次数" fill="#10b981" radius={[0, 4, 4, 0]} />
+                    <Bar
+                      dataKey="使用次数"
+                      fill="#10b981"
+                      radius={[0, 4, 4, 0]}
+                      className="cursor-pointer hover:opacity-80"
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -438,6 +588,9 @@ export default function UsageStatsPage() {
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       使用率排名
                     </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      操作
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -467,6 +620,20 @@ export default function UsageStatsPage() {
                           <span className="inline-flex items-center justify-center w-7 h-7 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
                             {index + 1}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <button
+                            onClick={() =>
+                              handleDrillDown({
+                                level: 'category',
+                                title: stat.name,
+                                category: stat.name,
+                              })
+                            }
+                            className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+                          >
+                            查看详情
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -872,6 +1039,14 @@ export default function UsageStatsPage() {
           </div>
         </>
       )}
+
+      <DrillDownModal
+        isOpen={isDrillOpen}
+        onClose={() => setIsDrillOpen(false)}
+        context={drillContext}
+        onDrillDown={handleDrillDown}
+        onDrillUp={handleDrillUp}
+      />
     </div>
   );
 }
