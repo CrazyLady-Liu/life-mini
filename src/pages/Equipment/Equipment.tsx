@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Eye, Filter, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { Plus, Search, Edit2, Trash2, Eye, Filter, CheckCircle2, XCircle, AlertCircle, X } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
@@ -34,11 +34,6 @@ export default function EquipmentPage() {
     notes: '',
   });
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [nameValidation, setNameValidation] = useState<{
-    valid: boolean;
-    message: string;
-    type: 'success' | 'error' | 'warning' | '';
-  }>({ valid: true, message: '', type: '' });
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
@@ -63,42 +58,45 @@ export default function EquipmentPage() {
         (!editingEquipment || eq.id !== editingEquipment.id)
     );
     const uniqueNames = Array.from(new Set(sameCategoryEquipments.map((eq) => eq.name)));
+    const exactMatchIndex = uniqueNames.findIndex((n) => n === formData.name);
+    if (exactMatchIndex > -1) {
+      uniqueNames.splice(exactMatchIndex, 1);
+    }
     return uniqueNames
       .filter((name) => name.toLowerCase().includes(keyword))
       .slice(0, 6);
   }, [formData.name, formData.category, equipments, editingEquipment]);
 
-  const validateName = (name: string, category: string) => {
+  const nameValidation = useMemo(() => {
+    const name = formData.name;
+    const category = formData.category;
+
     if (!name) {
-      setNameValidation({ valid: true, message: '', type: '' });
-      return;
+      return { valid: true, message: '', type: '' as const };
     }
 
     if (name.length < NAME_VALIDATION.minLength) {
-      setNameValidation({
+      return {
         valid: false,
         message: `名称长度不能少于 ${NAME_VALIDATION.minLength} 个字符`,
-        type: 'error',
-      });
-      return;
+        type: 'error' as const,
+      };
     }
 
     if (name.length > NAME_VALIDATION.maxLength) {
-      setNameValidation({
+      return {
         valid: false,
         message: `名称长度不能超过 ${NAME_VALIDATION.maxLength} 个字符`,
-        type: 'error',
-      });
-      return;
+        type: 'error' as const,
+      };
     }
 
     if (!NAME_VALIDATION.pattern.test(name)) {
-      setNameValidation({
+      return {
         valid: false,
         message: '名称不允许以数字或特殊字符开头',
-        type: 'error',
-      });
-      return;
+        type: 'error' as const,
+      };
     }
 
     if (category) {
@@ -109,40 +107,36 @@ export default function EquipmentPage() {
           (!editingEquipment || eq.id !== editingEquipment.id)
       );
       if (duplicateExists) {
-        setNameValidation({
+        return {
           valid: false,
           message: '该分类下已存在同名装备，请修改名称或补充后缀',
-          type: 'error',
-        });
-        return;
+          type: 'error' as const,
+        };
       }
+    }
+
+    if (category && nameSuggestions.length > 0) {
+      return {
+        valid: true,
+        message: `已找到 ${nameSuggestions.length} 个相似名称建议`,
+        type: 'warning' as const,
+      };
     }
 
     if (category) {
-      const keyword = name.toLowerCase();
-      const similarCount = equipments.filter(
-        (eq) =>
-          eq.category === category &&
-          eq.name.toLowerCase().includes(keyword) &&
-          eq.name !== name &&
-          (!editingEquipment || eq.id !== editingEquipment.id)
-      ).length;
-      if (similarCount > 0) {
-        setNameValidation({
-          valid: true,
-          message: `已找到 ${similarCount} 个相似名称建议`,
-          type: 'warning',
-        });
-        return;
-      }
+      return { valid: true, message: '名称可用', type: 'success' as const };
     }
 
-    setNameValidation({ valid: true, message: '名称可用', type: 'success' });
-  };
+    return { valid: true, message: '', type: '' as const };
+  }, [formData.name, formData.category, equipments, editingEquipment, nameSuggestions]);
 
-  useEffect(() => {
-    validateName(formData.name, formData.category);
-  }, [formData.name, formData.category]);
+  const handleClearName = useCallback(() => {
+    setFormData((prev) => ({ ...prev, name: '' }));
+    setShowSuggestions(false);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -173,6 +167,7 @@ export default function EquipmentPage() {
       supplierId: '',
       notes: '',
     });
+    setShowSuggestions(false);
     setIsModalOpen(true);
   };
 
@@ -190,6 +185,7 @@ export default function EquipmentPage() {
       supplierId: equipment.supplierId,
       notes: equipment.notes || '',
     });
+    setShowSuggestions(false);
     setIsModalOpen(true);
   };
 
@@ -201,7 +197,11 @@ export default function EquipmentPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.name || !formData.category) {
+      return;
+    }
     if (!nameValidation.valid) {
+      inputRef.current?.focus();
       return;
     }
     if (editingEquipment) {
@@ -379,7 +379,7 @@ export default function EquipmentPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="relative">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 装备名称 <span className="text-red-500">*</span>
               </label>
@@ -394,7 +394,8 @@ export default function EquipmentPage() {
                   onFocus={() => setShowSuggestions(true)}
                   required
                   className={cn(
-                    'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent pr-10',
+                    'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent',
+                    formData.name ? 'pr-20' : 'pr-10',
                     nameValidation.type === 'error'
                       ? 'border-red-400 focus:ring-red-500'
                       : nameValidation.type === 'success'
@@ -403,19 +404,31 @@ export default function EquipmentPage() {
                   )}
                   placeholder="请输入装备名称"
                 />
-                {nameValidation.type && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    {nameValidation.type === 'success' && (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    )}
-                    {nameValidation.type === 'error' && (
-                      <XCircle className="w-5 h-5 text-red-500" />
-                    )}
-                    {nameValidation.type === 'warning' && (
-                      <AlertCircle className="w-5 h-5 text-amber-500" />
-                    )}
-                  </div>
-                )}
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  {formData.name && (
+                    <button
+                      type="button"
+                      onClick={handleClearName}
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                      title="清除"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                  {nameValidation.type && (
+                    <div className="w-5 h-5 flex items-center justify-center">
+                      {nameValidation.type === 'success' && (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                      )}
+                      {nameValidation.type === 'error' && (
+                        <XCircle className="w-5 h-5 text-red-500" />
+                      )}
+                      {nameValidation.type === 'warning' && (
+                        <AlertCircle className="w-5 h-5 text-amber-500" />
+                      )}
+                    </div>
+                  )}
+                </div>
                 {showSuggestions && nameSuggestions.length > 0 && (
                   <div
                     ref={suggestionsRef}
@@ -438,33 +451,35 @@ export default function EquipmentPage() {
                   </div>
                 )}
               </div>
-              {nameValidation.message && (
-                <p
-                  className={cn(
-                    'mt-1 text-xs flex items-center gap-1',
-                    nameValidation.type === 'error' && 'text-red-500',
-                    nameValidation.type === 'success' && 'text-emerald-600',
-                    nameValidation.type === 'warning' && 'text-amber-600'
-                  )}
-                >
-                  {nameValidation.type === 'error' && (
-                    <XCircle className="w-3 h-3" />
-                  )}
-                  {nameValidation.type === 'success' && (
-                    <CheckCircle2 className="w-3 h-3" />
-                  )}
-                  {nameValidation.type === 'warning' && (
-                    <AlertCircle className="w-3 h-3" />
-                  )}
-                  {nameValidation.message}
-                </p>
-              )}
-              {!formData.category && formData.name && (
-                <p className="mt-1 text-xs text-gray-400 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  请先选择分类以启用名称联想和重名校验
-                </p>
-              )}
+              <div className="min-h-[20px] mt-1">
+                {nameValidation.message && (
+                  <p
+                    className={cn(
+                      'text-xs flex items-center gap-1',
+                      nameValidation.type === 'error' && 'text-red-500',
+                      nameValidation.type === 'success' && 'text-emerald-600',
+                      nameValidation.type === 'warning' && 'text-amber-600'
+                    )}
+                  >
+                    {nameValidation.type === 'error' && (
+                      <XCircle className="w-3 h-3 flex-shrink-0" />
+                    )}
+                    {nameValidation.type === 'success' && (
+                      <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
+                    )}
+                    {nameValidation.type === 'warning' && (
+                      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    )}
+                    {nameValidation.message}
+                  </p>
+                )}
+                {!formData.category && formData.name && !nameValidation.message && (
+                  <p className="text-xs text-gray-400 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    请先选择分类以启用名称联想和重名校验
+                  </p>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -472,7 +487,12 @@ export default function EquipmentPage() {
               </label>
               <select
                 value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, category: e.target.value });
+                  if (formData.name && e.target.value) {
+                    setShowSuggestions(true);
+                  }
+                }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
               >
