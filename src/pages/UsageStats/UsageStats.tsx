@@ -69,7 +69,7 @@ export default function UsageStatsPage() {
     const categoryMap = new Map<string, { count: number; usage: number }>();
     
     equipments.forEach((eq) => {
-      const existing = categoryMap.get(eq.category) || { count: 0; usage: 0 };
+      const existing = categoryMap.get(eq.category) || { count: 0, usage: 0 };
       categoryMap.set(eq.category, {
         count: existing.count + 1,
         usage: existing.usage + eq.usageCount,
