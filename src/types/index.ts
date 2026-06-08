@@ -132,3 +132,31 @@ export interface Notification {
   read: boolean;
   createdAt: string;
 }
+
+export type RiskLevel = 'low' | 'medium' | 'high';
+
+export interface EquipmentHealth {
+  equipmentId: string;
+  healthScore: number;
+  wearRate: number;
+  damageScore: number;
+  maintenanceScore: number;
+  ageScore: number;
+  riskLevel: RiskLevel;
+  estimatedScrapDate: string;
+  remainingLifespanDays: number;
+  totalDamageCount: number;
+  totalMaintenanceCount: number;
+  totalMaintenanceCost: number;
+  maintenanceCostRatio: number;
+  monthlyUsageRate: number;
+  details: {
+    usageCount: number;
+    expectedLifespanUses: number;
+    ageDays: number;
+    expectedLifespanDays: number;
+    severeDamageCount: number;
+    moderateDamageCount: number;
+    minorDamageCount: number;
+  };
+}

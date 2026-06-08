@@ -1,20 +1,22 @@
 import { useState, useMemo, useRef } from 'react';
-import { Plus, Search, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Heart } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import CategoryNameInput from '@/components/CategoryNameInput';
 import { formatCurrency, formatDate, equipmentCategories } from '@/utils/format';
+import { calculateEquipmentHealth, getHealthScoreColor, getRiskLevelLabel, getRiskLevelColor } from '@/utils/health';
 import { EQUIPMENT_NAME_CONFIG } from '@/config/nameInputConfig';
 import type { Equipment } from '@/types';
 import type { CategoryNameInputRef } from '@/components/CategoryNameInput';
 
 export default function EquipmentPage() {
-  const { equipments, suppliers, addEquipment, updateEquipment, deleteEquipment } = useAppStore();
+  const { equipments, suppliers, damageRecords, maintenances, addEquipment, updateEquipment, deleteEquipment } = useAppStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [healthFilter, setHealthFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [formData, setFormData] = useState({
@@ -31,6 +33,15 @@ export default function EquipmentPage() {
   });
   const nameInputRef = useRef<CategoryNameInputRef>(null);
 
+  const equipmentHealthMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof calculateEquipmentHealth>>();
+    equipments.forEach((eq) => {
+      const health = calculateEquipmentHealth(eq, damageRecords, maintenances);
+      map.set(eq.id, health);
+    });
+    return map;
+  }, [equipments, damageRecords, maintenances]);
+
   const filteredEquipments = useMemo(() => {
     return equipments.filter((eq) => {
       const matchesSearch =
@@ -39,9 +50,22 @@ export default function EquipmentPage() {
         eq.model.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = !statusFilter || eq.status === statusFilter;
       const matchesCategory = !categoryFilter || eq.category === categoryFilter;
-      return matchesSearch && matchesStatus && matchesCategory;
+      
+      const health = equipmentHealthMap.get(eq.id);
+      let matchesHealth = true;
+      if (healthFilter && health) {
+        if (healthFilter === 'high') {
+          matchesHealth = health.riskLevel === 'high';
+        } else if (healthFilter === 'medium') {
+          matchesHealth = health.riskLevel === 'medium';
+        } else if (healthFilter === 'low') {
+          matchesHealth = health.riskLevel === 'low';
+        }
+      }
+      
+      return matchesSearch && matchesStatus && matchesCategory && matchesHealth;
     });
-  }, [equipments, searchTerm, statusFilter, categoryFilter]);
+  }, [equipments, searchTerm, statusFilter, categoryFilter, healthFilter, equipmentHealthMap]);
 
   const sameCategoryNames = useMemo(() => {
     if (!formData.category) return [];
@@ -145,7 +169,7 @@ export default function EquipmentPage() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
@@ -170,6 +194,16 @@ export default function EquipmentPage() {
                 <option value="damaged">损坏待修</option>
                 <option value="scrapped">已报废</option>
               </select>
+              <select
+                value={healthFilter}
+                onChange={(e) => setHealthFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              >
+                <option value="">全部健康度</option>
+                <option value="high">高风险</option>
+                <option value="medium">中风险</option>
+                <option value="low">低风险</option>
+              </select>
             </div>
           </div>
         </div>
@@ -191,7 +225,10 @@ export default function EquipmentPage() {
                   使用次数
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  存放位置
+                  健康度
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  风险等级
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   状态
@@ -230,7 +267,54 @@ export default function EquipmentPage() {
                     </span>
                     <span className="text-xs text-gray-500"> 次</span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{equipment.location}</td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const health = equipmentHealthMap.get(equipment.id);
+                      if (!health) return <span className="text-gray-400">-</span>;
+                      return (
+                        <div className="flex items-center gap-2">
+                          <Heart
+                            className="w-4 h-4"
+                            style={{ color: getHealthScoreColor(health.healthScore) }}
+                          />
+                          <div className="flex-1 min-w-16">
+                            <div className="w-full bg-gray-200 rounded-full h-1.5">
+                              <div
+                                className="h-1.5 rounded-full"
+                                style={{
+                                  width: `${health.healthScore}%`,
+                                  backgroundColor: getHealthScoreColor(health.healthScore),
+                                }}
+                              ></div>
+                            </div>
+                          </div>
+                          <span
+                            className="text-sm font-bold"
+                            style={{ color: getHealthScoreColor(health.healthScore) }}
+                          >
+                            {health.healthScore}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const health = equipmentHealthMap.get(equipment.id);
+                      if (!health) return <span className="text-gray-400">-</span>;
+                      return (
+                        <span
+                          className="text-xs px-2 py-1 rounded-full"
+                          style={{
+                            backgroundColor: `${getRiskLevelColor(health.riskLevel)}20`,
+                            color: getRiskLevelColor(health.riskLevel),
+                          }}
+                        >
+                          {getRiskLevelLabel(health.riskLevel)}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-6 py-4">
                     <StatusBadge status={equipment.status} variant="equipment" />
                   </td>
