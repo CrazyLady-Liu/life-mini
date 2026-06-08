@@ -1,11 +1,18 @@
-import { useState, useMemo } from 'react';
-import { Plus, Search, Edit2, Trash2, Eye, Filter } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { Plus, Search, Edit2, Trash2, Eye, Filter, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import { formatCurrency, formatDate, equipmentCategories } from '@/utils/format';
+import { cn } from '@/lib/utils';
 import type { Equipment } from '@/types';
+
+const NAME_VALIDATION = {
+  minLength: 2,
+  maxLength: 50,
+  pattern: /^[^\d\W_]/,
+};
 
 export default function EquipmentPage() {
   const { equipments, suppliers, addEquipment, updateEquipment, deleteEquipment } = useAppStore();
@@ -26,6 +33,14 @@ export default function EquipmentPage() {
     supplierId: '',
     notes: '',
   });
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [nameValidation, setNameValidation] = useState<{
+    valid: boolean;
+    message: string;
+    type: 'success' | 'error' | 'warning' | '';
+  }>({ valid: true, message: '', type: '' });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const filteredEquipments = useMemo(() => {
     return equipments.filter((eq) => {
@@ -38,6 +53,111 @@ export default function EquipmentPage() {
       return matchesSearch && matchesStatus && matchesCategory;
     });
   }, [equipments, searchTerm, statusFilter, categoryFilter]);
+
+  const nameSuggestions = useMemo(() => {
+    if (!formData.name || !formData.category) return [];
+    const keyword = formData.name.toLowerCase();
+    const sameCategoryEquipments = equipments.filter(
+      (eq) =>
+        eq.category === formData.category &&
+        (!editingEquipment || eq.id !== editingEquipment.id)
+    );
+    const uniqueNames = Array.from(new Set(sameCategoryEquipments.map((eq) => eq.name)));
+    return uniqueNames
+      .filter((name) => name.toLowerCase().includes(keyword))
+      .slice(0, 6);
+  }, [formData.name, formData.category, equipments, editingEquipment]);
+
+  const validateName = (name: string, category: string) => {
+    if (!name) {
+      setNameValidation({ valid: true, message: '', type: '' });
+      return;
+    }
+
+    if (name.length < NAME_VALIDATION.minLength) {
+      setNameValidation({
+        valid: false,
+        message: `名称长度不能少于 ${NAME_VALIDATION.minLength} 个字符`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (name.length > NAME_VALIDATION.maxLength) {
+      setNameValidation({
+        valid: false,
+        message: `名称长度不能超过 ${NAME_VALIDATION.maxLength} 个字符`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (!NAME_VALIDATION.pattern.test(name)) {
+      setNameValidation({
+        valid: false,
+        message: '名称不允许以数字或特殊字符开头',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (category) {
+      const duplicateExists = equipments.some(
+        (eq) =>
+          eq.category === category &&
+          eq.name === name &&
+          (!editingEquipment || eq.id !== editingEquipment.id)
+      );
+      if (duplicateExists) {
+        setNameValidation({
+          valid: false,
+          message: '该分类下已存在同名装备，请修改名称或补充后缀',
+          type: 'error',
+        });
+        return;
+      }
+    }
+
+    if (category) {
+      const keyword = name.toLowerCase();
+      const similarCount = equipments.filter(
+        (eq) =>
+          eq.category === category &&
+          eq.name.toLowerCase().includes(keyword) &&
+          eq.name !== name &&
+          (!editingEquipment || eq.id !== editingEquipment.id)
+      ).length;
+      if (similarCount > 0) {
+        setNameValidation({
+          valid: true,
+          message: `已找到 ${similarCount} 个相似名称建议`,
+          type: 'warning',
+        });
+        return;
+      }
+    }
+
+    setNameValidation({ valid: true, message: '名称可用', type: 'success' });
+  };
+
+  useEffect(() => {
+    validateName(formData.name, formData.category);
+  }, [formData.name, formData.category]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        inputRef.current &&
+        !inputRef.current.contains(e.target as Node) &&
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleAdd = () => {
     setEditingEquipment(null);
@@ -81,6 +201,9 @@ export default function EquipmentPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!nameValidation.valid) {
+      return;
+    }
     if (editingEquipment) {
       updateEquipment(editingEquipment.id, {
         ...formData,
@@ -256,18 +379,92 @@ export default function EquipmentPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 装备名称 <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                placeholder="请输入装备名称"
-              />
+              <div ref={inputRef} className="relative">
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => {
+                    setFormData({ ...formData, name: e.target.value });
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  required
+                  className={cn(
+                    'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent pr-10',
+                    nameValidation.type === 'error'
+                      ? 'border-red-400 focus:ring-red-500'
+                      : nameValidation.type === 'success'
+                      ? 'border-emerald-400'
+                      : 'border-gray-300'
+                  )}
+                  placeholder="请输入装备名称"
+                />
+                {nameValidation.type && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    {nameValidation.type === 'success' && (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    )}
+                    {nameValidation.type === 'error' && (
+                      <XCircle className="w-5 h-5 text-red-500" />
+                    )}
+                    {nameValidation.type === 'warning' && (
+                      <AlertCircle className="w-5 h-5 text-amber-500" />
+                    )}
+                  </div>
+                )}
+                {showSuggestions && nameSuggestions.length > 0 && (
+                  <div
+                    ref={suggestionsRef}
+                    className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+                  >
+                    {nameSuggestions.map((name, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, name });
+                          setShowSuggestions(false);
+                        }}
+                        className="w-full px-3 py-2 text-left hover:bg-emerald-50 transition-colors text-sm text-gray-700 flex items-center gap-2"
+                      >
+                        <Search className="w-4 h-4 text-gray-400" />
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {nameValidation.message && (
+                <p
+                  className={cn(
+                    'mt-1 text-xs flex items-center gap-1',
+                    nameValidation.type === 'error' && 'text-red-500',
+                    nameValidation.type === 'success' && 'text-emerald-600',
+                    nameValidation.type === 'warning' && 'text-amber-600'
+                  )}
+                >
+                  {nameValidation.type === 'error' && (
+                    <XCircle className="w-3 h-3" />
+                  )}
+                  {nameValidation.type === 'success' && (
+                    <CheckCircle2 className="w-3 h-3" />
+                  )}
+                  {nameValidation.type === 'warning' && (
+                    <AlertCircle className="w-3 h-3" />
+                  )}
+                  {nameValidation.message}
+                </p>
+              )}
+              {!formData.category && formData.name && (
+                <p className="mt-1 text-xs text-gray-400 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  请先选择分类以启用名称联想和重名校验
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
