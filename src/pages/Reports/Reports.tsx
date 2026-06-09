@@ -12,7 +12,8 @@ import {
   Warehouse,
   TrendingUp,
   TrendingDown,
-  DollarSign,
+  Wallet,
+  Coins,
   PieChart as PieChartIcon,
   ArrowRightLeft,
   Receipt,
@@ -532,7 +533,7 @@ export default function ReportsPage() {
                 <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 border border-emerald-200">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center">
-                      <DollarSign className="w-5 h-5 text-white" />
+                      <Wallet className="w-5 h-5 text-white" />
                     </div>
                     <div>
                       <p className="text-xs text-emerald-600">累计收入</p>
@@ -708,7 +709,7 @@ export default function ReportsPage() {
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                      <DollarSign className="w-5 h-5 text-white" />
+                      <Wallet className="w-5 h-5 text-white" />
                     </div>
                     <div>
                       <p className="text-xs text-blue-600">净收入</p>

@@ -306,7 +306,7 @@ export default function RentalsPage() {
                           <Button
                             size="sm"
                             variant="secondary"
-                            leftIcon={<DollarSign className="w-4 h-4" />}
+                            leftIcon={<CreditCard className="w-4 h-4" />}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleCollectDeposit(rental.id);
