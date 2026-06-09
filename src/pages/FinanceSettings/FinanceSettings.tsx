@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Wallet, AlertTriangle, Users, Settings, Trash2, Edit2, Save, X } from 'lucide-react';
+import { Plus, Wallet, AlertTriangle, Users, Trash2, Edit2 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';

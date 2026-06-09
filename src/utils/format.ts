@@ -107,9 +107,13 @@ export const transactionTypeLabels: Record<string, string> = {
   deposit_collect: '押金收取',
   deposit_refund: '押金退还',
   deposit_forfeit: '押金没收',
-  penalty: '违约金',
+  penalty: '逾期违约金',
   rental_fee: '租赁费用',
   damage_compensation: '损坏赔偿',
+  package_discount: '套餐优惠抵扣',
+  coupon_discount: '优惠券抵扣',
+  delivery_fee: '配送附加费',
+  refund_rental: '租金退款',
 };
 
 export const equipmentValueLevelLabels: Record<string, string> = {
@@ -118,3 +122,20 @@ export const equipmentValueLevelLabels: Record<string, string> = {
 };
 
 export const highValueThreshold = 800;
+
+export const financeCategoryLabels: Record<string, string> = {
+  rental_income: '租金收入',
+  deposit_income: '押金收入',
+  deposit_refund: '押金退还',
+  penalty_income: '违约金收入',
+  damage_compensation: '损坏赔偿',
+  discount: '优惠抵扣',
+  delivery_fee: '配送费用',
+  other: '其他',
+};
+
+export const voucherStatusLabels: Record<string, string> = {
+  pending: '待开票',
+  issued: '已开票',
+  cancelled: '已作废',
+};

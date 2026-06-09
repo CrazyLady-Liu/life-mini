@@ -12,7 +12,29 @@ export type DepositStatus = 'pending' | 'collected' | 'refunded_full' | 'refunde
 
 export type DepositRuleType = 'category' | 'equipment' | 'package';
 
-export type TransactionType = 'deposit_collect' | 'deposit_refund' | 'deposit_forfeit' | 'penalty' | 'rental_fee' | 'damage_compensation';
+export type TransactionType = 
+  | 'deposit_collect' 
+  | 'deposit_refund' 
+  | 'deposit_forfeit' 
+  | 'penalty' 
+  | 'rental_fee' 
+  | 'damage_compensation'
+  | 'package_discount'
+  | 'coupon_discount'
+  | 'delivery_fee'
+  | 'refund_rental';
+
+export type FinanceCategory = 
+  | 'rental_income'
+  | 'deposit_income'
+  | 'deposit_refund'
+  | 'penalty_income'
+  | 'damage_compensation'
+  | 'discount'
+  | 'delivery_fee'
+  | 'other';
+
+export type VoucherStatus = 'pending' | 'issued' | 'cancelled';
 
 export type EquipmentValueLevel = 'normal' | 'high';
 
@@ -247,4 +269,84 @@ export interface DepositExemptCustomer {
 export interface EquipmentWithDeposit extends Equipment {
   depositAmount: number;
   valueLevel: EquipmentValueLevel;
+}
+
+export interface RentalFinanceDetail {
+  id: string;
+  rentalId: string;
+  customerId: string;
+  
+  baseRentalFee: number;
+  packageDiscount: number;
+  couponDiscount: number;
+  deliveryFee: number;
+  penaltyAmount: number;
+  damageCompensation: number;
+  depositForfeited: number;
+  
+  actualIncome: number;
+  totalDiscount: number;
+  
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FundFlowRecord {
+  id: string;
+  flowNo: string;
+  rentalId: string;
+  customerId: string;
+  relatedDepositId?: string;
+  relatedPenaltyId?: string;
+  
+  type: TransactionType;
+  financeCategory: FinanceCategory;
+  amount: number;
+  direction: 'income' | 'expense';
+  
+  operator: string;
+  operateTime: string;
+  changeReason: string;
+  remark?: string;
+  
+  voucherStatus: VoucherStatus;
+  voucherNo?: string;
+  
+  createdAt: string;
+}
+
+export interface FinanceVoucher {
+  id: string;
+  voucherNo: string;
+  rentalId: string;
+  customerId: string;
+  
+  type: 'receipt' | 'payment';
+  amount: number;
+  
+  items: Array<{
+    name: string;
+    amount: number;
+    category: FinanceCategory;
+  }>;
+  
+  operator: string;
+  issuedAt: string;
+  remark?: string;
+  
+  createdAt: string;
+}
+
+export interface CustomerCoupon {
+  id: string;
+  customerId: string;
+  name: string;
+  code: string;
+  type: 'fixed' | 'percentage';
+  value: number;
+  minAmount?: number;
+  isUsed: boolean;
+  usedRentalId?: string;
+  expireDate: string;
+  createdAt: string;
 }

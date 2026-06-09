@@ -11,8 +11,11 @@ import {
   Wrench,
   Warehouse,
   TrendingUp,
+  TrendingDown,
   DollarSign,
-  Calendar,
+  PieChart,
+  ArrowRightLeft,
+  Receipt,
 } from 'lucide-react';
 import {
   BarChart,
@@ -33,11 +36,11 @@ import { useAppStore } from '@/store/useAppStore';
 import Button from '@/components/Button';
 import {
   formatCurrency,
-  formatDate,
   equipmentStatusLabels,
   rentalStatusLabels,
   damageLevelLabels,
   maintenanceStatusLabels,
+  financeCategoryLabels,
 } from '@/utils/format';
 import { exportToCSV, exportToJSON } from '@/utils/export';
 
@@ -50,12 +53,13 @@ export default function ReportsPage() {
     partReplacements,
     maintenances,
     inventoryChecks,
-    inventoryItems,
     suppliers,
+    fundFlowRecords,
+    rentalFinanceDetails,
+    financeVouchers,
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState('overview');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [exportType, setExportType] = useState<'csv' | 'json'>('csv');
 
   const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
@@ -89,6 +93,32 @@ export default function ReportsPage() {
       ? equipments.reduce((sum, e) => sum + e.usageCount, 0) / totalEquipment
       : 0;
     
+    const totalFundIncome = fundFlowRecords
+      .filter((f) => f.direction === 'income')
+      .reduce((sum, f) => sum + f.amount, 0);
+    
+    const totalFundExpense = fundFlowRecords
+      .filter((f) => f.direction === 'expense')
+      .reduce((sum, f) => sum + f.amount, 0);
+    
+    const netFundIncome = totalFundIncome - totalFundExpense;
+    
+    const totalPenalty = rentalFinanceDetails.reduce(
+      (sum, d) => sum + d.penaltyAmount, 0
+    );
+    
+    const totalDepositForfeited = rentalFinanceDetails.reduce(
+      (sum, d) => sum + d.depositForfeited, 0
+    );
+    
+    const totalDiscount = rentalFinanceDetails.reduce(
+      (sum, d) => sum + d.totalDiscount, 0
+    );
+    
+    const totalDeliveryFee = rentalFinanceDetails.reduce(
+      (sum, d) => sum + d.deliveryFee, 0
+    );
+    
     return {
       totalEquipment,
       totalCustomers,
@@ -101,6 +131,15 @@ export default function ReportsPage() {
       totalPartsCost,
       avgRentalPrice,
       avgUsageCount,
+      totalFundIncome,
+      totalFundExpense,
+      netFundIncome,
+      totalPenalty,
+      totalDepositForfeited,
+      totalDiscount,
+      totalDeliveryFee,
+      fundFlowCount: fundFlowRecords.length,
+      voucherCount: financeVouchers.length,
     };
   }, [
     equipments,
@@ -110,6 +149,9 @@ export default function ReportsPage() {
     partReplacements,
     maintenances,
     inventoryChecks,
+    fundFlowRecords,
+    rentalFinanceDetails,
+    financeVouchers,
   ]);
 
   const monthlyData = useMemo(() => {
@@ -163,6 +205,50 @@ export default function ReportsPage() {
         使用次数: e.usageCount,
       }));
   }, [equipments]);
+
+  const financeCategoryData = useMemo(() => {
+    const categoryMap = new Map<string, number>();
+    fundFlowRecords
+      .filter((f) => f.direction === 'income')
+      .forEach((f) => {
+        const label = financeCategoryLabels[f.financeCategory] || f.financeCategory;
+        categoryMap.set(label, (categoryMap.get(label) || 0) + f.amount);
+      });
+    return Array.from(categoryMap.entries()).map(([name, value]) => ({ name, value }));
+  }, [fundFlowRecords]);
+
+  const monthlyFinanceData = useMemo(() => {
+    const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+    const now = new Date();
+    const data = [];
+    
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthIndex = date.getMonth();
+      
+      const monthFlows = fundFlowRecords.filter((f) => {
+        const fDate = new Date(f.createdAt);
+        return fDate.getMonth() === monthIndex && fDate.getFullYear() === date.getFullYear();
+      });
+      
+      const income = monthFlows
+        .filter((f) => f.direction === 'income')
+        .reduce((sum, f) => sum + f.amount, 0);
+      
+      const expense = monthFlows
+        .filter((f) => f.direction === 'expense')
+        .reduce((sum, f) => sum + f.amount, 0);
+      
+      data.push({
+        name: months[monthIndex],
+        收入: income,
+        支出: expense,
+        净流入: income - expense,
+      });
+    }
+    
+    return data;
+  }, [fundFlowRecords]);
 
   const handleExportEquipment = () => {
     const columns = [
@@ -279,6 +365,7 @@ export default function ReportsPage() {
 
   const tabs = [
     { id: 'overview', label: '综合概览', icon: FileText },
+    { id: 'finance', label: '财务分析', icon: PieChart },
     { id: 'export', label: '数据导出', icon: Download },
   ];
 
@@ -351,6 +438,61 @@ export default function ReportsPage() {
         }
       },
       count: suppliers.length,
+    },
+    {
+      title: '资金流水',
+      description: '导出所有资金流水记录',
+      icon: ArrowRightLeft,
+      onExport: () => {
+        const columns = [
+          { key: 'flowNo', label: '流水号' },
+          { key: 'type', label: '交易类型' },
+          { key: 'financeCategory', label: '财务分类' },
+          { key: 'amount', label: '金额' },
+          { key: 'direction', label: '方向' },
+          { key: 'customerId', label: '客户ID' },
+          { key: 'rentalId', label: '租赁单ID' },
+          { key: 'operator', label: '操作人' },
+          { key: 'operateTime', label: '操作时间' },
+          { key: 'changeReason', label: '变更原因' },
+          { key: 'voucherStatus', label: '凭证状态' },
+          { key: 'voucherNo', label: '凭证号' },
+          { key: 'createdAt', label: '创建时间' },
+        ];
+        if (exportType === 'csv') {
+          exportToCSV(fundFlowRecords, '资金流水', columns);
+        } else {
+          exportToJSON(fundFlowRecords, '资金流水');
+        }
+      },
+      count: stats.fundFlowCount,
+    },
+    {
+      title: '财务明细',
+      description: '导出租赁财务明细数据',
+      icon: Receipt,
+      onExport: () => {
+        const columns = [
+          { key: 'rentalId', label: '租赁单ID' },
+          { key: 'customerId', label: '客户ID' },
+          { key: 'baseRentalFee', label: '基础租金' },
+          { key: 'packageDiscount', label: '套餐优惠' },
+          { key: 'couponDiscount', label: '优惠券减免' },
+          { key: 'deliveryFee', label: '配送费' },
+          { key: 'penaltyAmount', label: '逾期罚金' },
+          { key: 'damageCompensation', label: '损坏赔偿' },
+          { key: 'depositForfeited', label: '押金扣款' },
+          { key: 'totalDiscount', label: '优惠合计' },
+          { key: 'actualIncome', label: '实际收入' },
+          { key: 'createdAt', label: '创建时间' },
+        ];
+        if (exportType === 'csv') {
+          exportToCSV(rentalFinanceDetails, '财务明细', columns);
+        } else {
+          exportToJSON(rentalFinanceDetails, '财务明细');
+        }
+      },
+      count: rentalFinanceDetails.length,
     },
   ];
 
@@ -530,6 +672,162 @@ export default function ReportsPage() {
                     <p className="text-sm text-gray-500">{item.title}</p>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'finance' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 border border-emerald-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-emerald-600">总收入</p>
+                      <p className="text-xl font-bold text-emerald-700">
+                        {formatCurrency(stats.totalFundIncome)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-4 border border-red-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center">
+                      <TrendingDown className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-red-600">总支出</p>
+                      <p className="text-xl font-bold text-red-700">
+                        {formatCurrency(stats.totalFundExpense)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                      <DollarSign className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-blue-600">净收入</p>
+                      <p className={`text-xl font-bold ${
+                        stats.netFundIncome >= 0 ? 'text-emerald-700' : 'text-red-700'
+                      }`}>
+                        {stats.netFundIncome >= 0 ? '+' : ''}{formatCurrency(stats.netFundIncome)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 border border-amber-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center">
+                      <ArrowRightLeft className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-amber-600">流水笔数</p>
+                      <p className="text-xl font-bold text-amber-700">
+                        {stats.fundFlowCount} 笔
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white rounded-xl p-4 border border-gray-200">
+                  <p className="text-xs text-gray-500 mb-1">租金收入</p>
+                  <p className="text-lg font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-gray-200">
+                  <p className="text-xs text-gray-500 mb-1">逾期罚金</p>
+                  <p className="text-lg font-bold text-amber-600">{formatCurrency(stats.totalPenalty)}</p>
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-gray-200">
+                  <p className="text-xs text-gray-500 mb-1">押金扣款</p>
+                  <p className="text-lg font-bold text-orange-600">{formatCurrency(stats.totalDepositForfeited)}</p>
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-gray-200">
+                  <p className="text-xs text-gray-500 mb-1">配送费收入</p>
+                  <p className="text-lg font-bold text-purple-600">{formatCurrency(stats.totalDeliveryFee)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-gray-50 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">月度收支趋势</h3>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={monthlyFinanceData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                        <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#fff',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                          }}
+                          formatter={(value: number) => formatCurrency(value)}
+                        />
+                        <Legend />
+                        <Line type="monotone" dataKey="收入" stroke="#10b981" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="支出" stroke="#ef4444" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="净流入" stroke="#3b82f6" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">收入分类占比</h3>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={financeCategoryData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={80}
+                          paddingAngle={2}
+                          dataKey="value"
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          labelLine={false}
+                        >
+                          {financeCategoryData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">财务关键指标</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-lg p-4 text-center">
+                    <p className="text-sm text-gray-500">优惠总额</p>
+                    <p className="text-xl font-bold text-red-500 mt-1">-{formatCurrency(stats.totalDiscount)}</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 text-center">
+                    <p className="text-sm text-gray-500">已开凭证</p>
+                    <p className="text-xl font-bold text-blue-600 mt-1">{stats.voucherCount} 张</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 text-center">
+                    <p className="text-sm text-gray-500">维护成本</p>
+                    <p className="text-xl font-bold text-orange-500 mt-1">{formatCurrency(stats.totalMaintenanceCost)}</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 text-center">
+                    <p className="text-sm text-gray-500">零部件成本</p>
+                    <p className="text-xl font-bold text-purple-500 mt-1">{formatCurrency(stats.totalPartsCost)}</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}

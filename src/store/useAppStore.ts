@@ -23,6 +23,12 @@ import type {
   DepositExemptCustomer,
   DepositStatus,
   TransactionType,
+  RentalFinanceDetail,
+  FundFlowRecord,
+  FinanceCategory,
+  CustomerCoupon,
+  FinanceVoucher,
+  VoucherStatus,
 } from '../types';
 import {
   mockEquipments,
@@ -47,6 +53,8 @@ import {
   isCustomerExemptFromDeposit,
   calculatePenalty,
   calculateDepositSettlement,
+  splitRentalFinance,
+  createFundFlowRecord,
 } from '../utils/finance';
 
 interface AppState {
@@ -65,6 +73,10 @@ interface AppState {
   financialTransactions: FinancialTransaction[];
   rentalPenalties: RentalPenalty[];
   depositExemptCustomers: DepositExemptCustomer[];
+  rentalFinanceDetails: RentalFinanceDetail[];
+  fundFlowRecords: FundFlowRecord[];
+  customerCoupons: CustomerCoupon[];
+  financeVouchers: FinanceVoucher[];
   
   addEquipment: (equipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'usageCount'>) => void;
   updateEquipment: (id: string, equipment: Partial<Equipment>) => void;
@@ -80,7 +92,7 @@ interface AppState {
   
   addRental: (rental: Omit<Rental, 'id' | 'createdAt' | 'status'> & { status?: RentalStatus }) => void;
   updateRental: (id: string, rental: Partial<Rental>) => void;
-  returnRental: (id: string, options?: { penaltyAmount?: number; damageCompensation?: number; adjustmentReason?: string; operator?: string }) => void;
+  returnRental: (id: string, options?: { penaltyAmount?: number; damageCompensation?: number; adjustmentReason?: string; operator?: string; packageDiscount?: number; couponDiscount?: number; deliveryFee?: number; couponId?: string }) => void;
   
   addDamageRecord: (record: Omit<DamageRecord, 'id' | 'createdAt' | 'status'>) => void;
   updateDamageRecord: (id: string, record: Partial<DamageRecord>) => void;
@@ -116,6 +128,20 @@ interface AppState {
   
   calculateRentalDeposit: (equipmentId: string, customerId: string) => { amount: number; isExempt: boolean; exemptReason?: string };
   calculateRentalPenalty: (rentalId: string, returnDate?: string) => RentalPenalty | null;
+  
+  getFinanceDetailByRentalId: (rentalId: string) => RentalFinanceDetail | undefined;
+  getFundFlowsByRentalId: (rentalId: string) => FundFlowRecord[];
+  getFundFlowsByType: (type: TransactionType) => FundFlowRecord[];
+  getFundFlowsByCategory: (category: FinanceCategory) => FundFlowRecord[];
+  
+  addFundFlowRecord: (record: Omit<FundFlowRecord, 'id' | 'flowNo' | 'operateTime' | 'createdAt' | 'voucherStatus'> & { voucherStatus?: VoucherStatus }) => void;
+  
+  issueVoucher: (rentalId: string, type: 'receipt' | 'payment', operator: string) => FinanceVoucher | null;
+  getVouchersByRentalId: (rentalId: string) => FinanceVoucher[];
+  
+  getCustomerCoupons: (customerId: string) => CustomerCoupon[];
+  useCoupon: (couponId: string, rentalId: string) => boolean;
+  addCoupon: (coupon: Omit<CustomerCoupon, 'id' | 'createdAt' | 'isUsed'>) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -136,6 +162,10 @@ export const useAppStore = create<AppState>()(
       financialTransactions: mockFinancialTransactions,
       rentalPenalties: mockRentalPenalties,
       depositExemptCustomers: mockDepositExemptCustomers,
+      rentalFinanceDetails: [],
+      fundFlowRecords: [],
+      customerCoupons: [],
+      financeVouchers: [],
       
       addEquipment: (equipment) => {
         const now = new Date().toISOString();
@@ -219,7 +249,7 @@ export const useAppStore = create<AppState>()(
         }));
       },
       
-      addRental: (rental) => {
+      addRental: (rental, options = {}) => {
         const now = new Date().toISOString();
         const newRentalId = generateId();
         const newRental: Rental = {
@@ -247,6 +277,8 @@ export const useAppStore = create<AppState>()(
           
           let depositRecord: DepositRecord | null = null;
           let transactions: FinancialTransaction[] = [];
+          let financeDetail: RentalFinanceDetail | null = null;
+          let fundFlows: FundFlowRecord[] = [];
           
           if (equipment && customer) {
             const depositAmount = calculateDepositAmount(equipment, state.depositRules);
@@ -267,6 +299,28 @@ export const useAppStore = create<AppState>()(
               createdAt: now,
               updatedAt: now,
             };
+            
+            financeDetail = splitRentalFinance(newRental, {
+              packageDiscount: 0,
+              couponDiscount: 0,
+              deliveryFee: 0,
+              penaltyAmount: 0,
+              damageCompensation: 0,
+              depositForfeited: 0,
+            });
+            
+            const rentalFeeFlow = createFundFlowRecord({
+              rentalId: newRentalId,
+              customerId: rental.customerId,
+              type: 'rental_fee',
+              amount: rental.price,
+              direction: 'income',
+              operator: '系统',
+              changeReason: '创建租赁订单，产生租金应收',
+              relatedDepositId: undefined,
+              relatedPenaltyId: undefined,
+            });
+            fundFlows.push(rentalFeeFlow);
           }
           
           const newState: any = {
@@ -283,6 +337,14 @@ export const useAppStore = create<AppState>()(
             newState.financialTransactions = [...state.financialTransactions, ...transactions];
           }
           
+          if (financeDetail) {
+            newState.rentalFinanceDetails = [...state.rentalFinanceDetails, financeDetail];
+          }
+          
+          if (fundFlows.length > 0) {
+            newState.fundFlowRecords = [...state.fundFlowRecords, ...fundFlows];
+          }
+          
           return newState;
         });
       },
@@ -297,7 +359,16 @@ export const useAppStore = create<AppState>()(
       
       returnRental: (id, options = {}) => {
         const now = new Date().toISOString();
-        const { penaltyAmount, damageCompensation = 0, adjustmentReason, operator = '系统' } = options;
+        const { 
+          penaltyAmount, 
+          damageCompensation = 0, 
+          adjustmentReason, 
+          operator = '系统',
+          packageDiscount = 0,
+          couponDiscount = 0,
+          deliveryFee = 0,
+          couponId,
+        } = options;
         
         set((state) => {
           const rental = state.rentals.find((r) => r.id === id);
@@ -305,6 +376,7 @@ export const useAppStore = create<AppState>()(
           
           const equipment = state.equipments.find((e) => e.id === rental.equipmentId);
           const depositRecord = state.depositRecords.find((d) => d.rentalId === id);
+          const existingFinanceDetail = state.rentalFinanceDetails.find((d) => d.rentalId === id);
           
           const updatedEquipments = state.equipments.map((eq) =>
             eq.id === rental.equipmentId
@@ -319,6 +391,8 @@ export const useAppStore = create<AppState>()(
           let newPenalty: RentalPenalty | null = null;
           let updatedDepositRecords = state.depositRecords;
           let newTransactions: FinancialTransaction[] = [];
+          let newFundFlows: FundFlowRecord[] = [];
+          let updatedFinanceDetail: RentalFinanceDetail | null = null;
           
           if (equipment && depositRecord && !depositRecord.isExempt) {
             const calculatedPenalty = calculatePenalty(rental, equipment, state.penaltyRules);
@@ -350,6 +424,20 @@ export const useAppStore = create<AppState>()(
                 operator,
                 createdAt: now,
               });
+              
+              const penaltyFlow = createFundFlowRecord({
+                rentalId: id,
+                customerId: rental.customerId,
+                type: 'penalty',
+                amount: finalPenaltyAmount,
+                direction: 'income',
+                operator,
+                changeReason: isAdjusted 
+                  ? `逾期违约金（${calculatedPenalty.overdueDays}天，已调整）` 
+                  : `逾期${calculatedPenalty.overdueDays}天，产生违约金`,
+                relatedPenaltyId: newPenalty.id,
+              });
+              newFundFlows.push(penaltyFlow);
             }
             
             const settlement = calculateDepositSettlement(depositRecord, finalPenaltyAmount, damageCompensation);
@@ -379,6 +467,18 @@ export const useAppStore = create<AppState>()(
                 operator,
                 createdAt: now,
               });
+              
+              const refundFlow = createFundFlowRecord({
+                rentalId: id,
+                customerId: rental.customerId,
+                type: 'deposit_refund',
+                amount: settlement.refundAmount,
+                direction: 'expense',
+                operator,
+                changeReason: `装备归还，${settlement.newStatus === 'refunded_full' ? '全额退还押金' : '部分退还押金'}`,
+                relatedDepositId: depositRecord.id,
+              });
+              newFundFlows.push(refundFlow);
             }
             
             if (settlement.forfeitAmount > 0) {
@@ -393,12 +493,98 @@ export const useAppStore = create<AppState>()(
                 operator,
                 createdAt: now,
               });
+              
+              const forfeitFlow = createFundFlowRecord({
+                rentalId: id,
+                customerId: rental.customerId,
+                type: 'deposit_forfeit',
+                amount: settlement.forfeitAmount,
+                direction: 'income',
+                operator,
+                changeReason: `扣除押金抵扣费用（违约金${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `+损坏赔偿${damageCompensation.toFixed(2)}` : ''}）`,
+                relatedDepositId: depositRecord.id,
+              });
+              newFundFlows.push(forfeitFlow);
+            }
+            
+            if (damageCompensation > 0) {
+              const damageFlow = createFundFlowRecord({
+                rentalId: id,
+                customerId: rental.customerId,
+                type: 'damage_compensation',
+                amount: damageCompensation,
+                direction: 'income',
+                operator,
+                changeReason: '装备损坏赔偿',
+              });
+              newFundFlows.push(damageFlow);
+            }
+            
+            if (packageDiscount > 0) {
+              const discountFlow = createFundFlowRecord({
+                rentalId: id,
+                customerId: rental.customerId,
+                type: 'package_discount',
+                amount: packageDiscount,
+                direction: 'expense',
+                operator,
+                changeReason: '套餐优惠抵扣',
+              });
+              newFundFlows.push(discountFlow);
+            }
+            
+            if (couponDiscount > 0) {
+              const couponFlow = createFundFlowRecord({
+                rentalId: id,
+                customerId: rental.customerId,
+                type: 'coupon_discount',
+                amount: couponDiscount,
+                direction: 'expense',
+                operator,
+                changeReason: '客户优惠券抵扣',
+              });
+              newFundFlows.push(couponFlow);
+            }
+            
+            if (deliveryFee > 0) {
+              const deliveryFlow = createFundFlowRecord({
+                rentalId: id,
+                customerId: rental.customerId,
+                type: 'delivery_fee',
+                amount: deliveryFee,
+                direction: 'income',
+                operator,
+                changeReason: '配送附加费',
+              });
+              newFundFlows.push(deliveryFlow);
+            }
+            
+            if (existingFinanceDetail) {
+              updatedFinanceDetail = {
+                ...existingFinanceDetail,
+                penaltyAmount: finalPenaltyAmount,
+                damageCompensation,
+                packageDiscount,
+                couponDiscount,
+                deliveryFee,
+                depositForfeited: settlement.forfeitAmount,
+                totalDiscount: packageDiscount + couponDiscount,
+                actualIncome: rental.price - packageDiscount - couponDiscount + deliveryFee + finalPenaltyAmount + damageCompensation + settlement.forfeitAmount,
+                updatedAt: now,
+              };
             }
           } else if (depositRecord?.isExempt) {
             updatedDepositRecords = state.depositRecords.map((d) =>
               d.rentalId === id
                 ? { ...d, status: 'refunded_full' as DepositStatus, updatedAt: now }
                 : d
+            );
+          }
+          
+          let updatedCoupons = state.customerCoupons;
+          if (couponId) {
+            updatedCoupons = state.customerCoupons.map((c) =>
+              c.id === couponId ? { ...c, isUsed: true, usedRentalId: id } : c
             );
           }
           
@@ -410,6 +596,11 @@ export const useAppStore = create<AppState>()(
             rentalPenalties: newPenalty 
               ? [...state.rentalPenalties, newPenalty]
               : state.rentalPenalties,
+            fundFlowRecords: [...state.fundFlowRecords, ...newFundFlows],
+            rentalFinanceDetails: updatedFinanceDetail
+              ? state.rentalFinanceDetails.map((d) => d.id === updatedFinanceDetail!.id ? updatedFinanceDetail! : d)
+              : state.rentalFinanceDetails,
+            customerCoupons: updatedCoupons,
           };
         });
       },
@@ -802,6 +993,108 @@ export const useAppStore = create<AppState>()(
         if (!rental || !equipment) return null;
         
         return calculatePenalty(rental, equipment, state.penaltyRules, returnDate);
+      },
+      
+      getFinanceDetailByRentalId: (rentalId) => {
+        return get().rentalFinanceDetails.find((d) => d.rentalId === rentalId);
+      },
+      
+      getFundFlowsByRentalId: (rentalId) => {
+        return get().fundFlowRecords.filter((f) => f.rentalId === rentalId)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      },
+      
+      getFundFlowsByType: (type) => {
+        return get().fundFlowRecords.filter((f) => f.type === type);
+      },
+      
+      getFundFlowsByCategory: (category) => {
+        return get().fundFlowRecords.filter((f) => f.financeCategory === category);
+      },
+      
+      addFundFlowRecord: (record) => {
+        const flow = createFundFlowRecord(record as any);
+        set((state) => ({
+          fundFlowRecords: [...state.fundFlowRecords, flow],
+        }));
+      },
+      
+      issueVoucher: (rentalId, type, operator) => {
+        const now = new Date().toISOString();
+        const state = get();
+        const rental = state.rentals.find((r) => r.id === rentalId);
+        const fundFlows = state.fundFlowRecords.filter((f) => f.rentalId === rentalId && f.direction === (type === 'receipt' ? 'income' : 'expense'));
+        
+        if (!rental || fundFlows.length === 0) return null;
+        
+        const totalAmount = fundFlows.reduce((sum, f) => sum + f.amount, 0);
+        
+        const voucher: FinanceVoucher = {
+          id: generateId(),
+          voucherNo: `VCH${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+          rentalId,
+          customerId: rental.customerId,
+          type,
+          amount: totalAmount,
+          items: fundFlows.map((f) => ({
+            name: f.changeReason,
+            amount: f.amount,
+            category: f.financeCategory,
+          })),
+          operator,
+          issuedAt: now,
+          createdAt: now,
+        };
+        
+        set((s) => ({
+          financeVouchers: [...s.financeVouchers, voucher],
+          fundFlowRecords: s.fundFlowRecords.map((f) =>
+            f.rentalId === rentalId && f.direction === (type === 'receipt' ? 'income' : 'expense')
+              ? { ...f, voucherStatus: 'issued' as VoucherStatus, voucherNo: voucher.voucherNo }
+              : f
+          ),
+        }));
+        
+        return voucher;
+      },
+      
+      getVouchersByRentalId: (rentalId) => {
+        return get().financeVouchers.filter((v) => v.rentalId === rentalId);
+      },
+      
+      getCustomerCoupons: (customerId) => {
+        const now = new Date();
+        return get().customerCoupons.filter((c) => 
+          c.customerId === customerId && !c.isUsed && new Date(c.expireDate) > now
+        );
+      },
+      
+      useCoupon: (couponId, rentalId) => {
+        const state = get();
+        const coupon = state.customerCoupons.find((c) => c.id === couponId);
+        
+        if (!coupon || coupon.isUsed) return false;
+        
+        set((s) => ({
+          customerCoupons: s.customerCoupons.map((c) =>
+            c.id === couponId ? { ...c, isUsed: true, usedRentalId: rentalId } : c
+          ),
+        }));
+        
+        return true;
+      },
+      
+      addCoupon: (coupon) => {
+        const now = new Date().toISOString();
+        const newCoupon: CustomerCoupon = {
+          ...coupon,
+          id: generateId(),
+          isUsed: false,
+          createdAt: now,
+        };
+        set((state) => ({
+          customerCoupons: [...state.customerCoupons, newCoupon],
+        }));
       },
     }),
     {

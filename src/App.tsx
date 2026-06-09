@@ -11,6 +11,7 @@ import Maintenance from "@/pages/Maintenance/Maintenance";
 import Inventory from "@/pages/Inventory/Inventory";
 import Reports from "@/pages/Reports/Reports";
 import FinanceSettings from "@/pages/FinanceSettings/FinanceSettings";
+import FinanceReconciliation from "@/pages/FinanceReconciliation/FinanceReconciliation";
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="inventory" element={<Inventory />} />
           <Route path="reports" element={<Reports />} />
           <Route path="finance-settings" element={<FinanceSettings />} />
+          <Route path="finance-reconciliation" element={<FinanceReconciliation />} />
         </Route>
       </Routes>
     </Router>

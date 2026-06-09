@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react';
-import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, DollarSign } from 'lucide-react';
+import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, DollarSign, PieChart, ArrowRightLeft, FileText, Download } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
-import { formatCurrency, formatDate, depositStatusLabels } from '@/utils/format';
-import { calculateRentalDeposit, calculateRentalPenalty } from '@/utils/finance';
-import type { Rental, DepositRecord, RentalPenalty, FinancialTransaction } from '@/types';
+import { formatCurrency, formatDate, formatDateTime, depositStatusLabels, transactionTypeLabels, financeCategoryLabels } from '@/utils/format';
+import { exportVoucherHTML } from '@/utils/export';
+import type { Rental } from '@/types';
 
 export default function RentalsPage() {
   const {
@@ -15,11 +15,13 @@ export default function RentalsPage() {
     customers,
     addRental,
     returnRental,
-    updateRental,
     collectDeposit,
     getDepositRecordByRentalId,
     getPenaltyByRentalId,
-    getTransactionsByRentalId,
+    getFinanceDetailByRentalId,
+    getFundFlowsByRentalId,
+    getVouchersByRentalId,
+    issueVoucher,
     calculateRentalDeposit: calcDeposit,
     calculateRentalPenalty: calcPenalty,
   } = useAppStore();
@@ -30,6 +32,7 @@ export default function RentalsPage() {
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [selectedRental, setSelectedRental] = useState<Rental | null>(null);
   const [expandedRentalId, setExpandedRentalId] = useState<string | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<'finance' | 'flows' | 'vouchers'>('finance');
   const [formData, setFormData] = useState({
     equipmentId: '',
     customerId: '',
@@ -44,6 +47,9 @@ export default function RentalsPage() {
     damageCompensation: '',
     adjustmentReason: '',
     operator: '管理员',
+    packageDiscount: '',
+    couponDiscount: '',
+    deliveryFee: '',
   });
 
   const availableEquipments = useMemo(() => {
@@ -99,6 +105,9 @@ export default function RentalsPage() {
       damageCompensation: '0',
       adjustmentReason: '',
       operator: '管理员',
+      packageDiscount: '0',
+      couponDiscount: '0',
+      deliveryFee: '0',
     });
     setIsReturnModalOpen(true);
   };
@@ -111,6 +120,9 @@ export default function RentalsPage() {
       damageCompensation: Number(returnFormData.damageCompensation),
       adjustmentReason: returnFormData.adjustmentReason || undefined,
       operator: returnFormData.operator,
+      packageDiscount: Number(returnFormData.packageDiscount) || 0,
+      couponDiscount: Number(returnFormData.couponDiscount) || 0,
+      deliveryFee: Number(returnFormData.deliveryFee) || 0,
     });
     
     setIsReturnModalOpen(false);
@@ -120,6 +132,15 @@ export default function RentalsPage() {
   const handleCollectDeposit = (rentalId: string) => {
     if (confirm('确认收取押金吗？')) {
       collectDeposit(rentalId);
+    }
+  };
+
+  const handleIssueVoucher = (rentalId: string, type: 'receipt' | 'payment') => {
+    const result = issueVoucher(rentalId, type, '管理员');
+    if (result) {
+      alert(`凭证已开具：${result.voucherNo}`);
+    } else {
+      alert('开具凭证失败，请检查是否有可开票的资金流水');
     }
   };
 
@@ -138,6 +159,9 @@ export default function RentalsPage() {
 
   const toggleExpand = (rentalId: string) => {
     setExpandedRentalId(expandedRentalId === rentalId ? null : rentalId);
+    if (expandedRentalId !== rentalId) {
+      setActiveDetailTab('finance');
+    }
   };
 
   const activeCount = rentals.filter((r) => r.status === 'active').length;
@@ -145,9 +169,7 @@ export default function RentalsPage() {
     .filter((r) => r.status === 'returned')
     .reduce((sum, r) => sum + r.price, 0);
 
-  const totalDeposits = useAppStore.getState().depositRecords
-    .filter((d) => d.status === 'collected')
-    .reduce((sum, d) => sum + d.collectedAmount, 0);
+  const totalFundFlows = useAppStore.getState().fundFlowRecords.length;
 
   return (
     <div className="space-y-6">
@@ -175,8 +197,8 @@ export default function RentalsPage() {
           <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(totalRevenue)}</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">在押押金总额</p>
-          <p className="text-2xl font-bold text-purple-600 mt-1">{formatCurrency(totalDeposits)}</p>
+          <p className="text-sm text-gray-500">资金流水记录</p>
+          <p className="text-2xl font-bold text-purple-600 mt-1">{totalFundFlows} 笔</p>
         </div>
       </div>
 
@@ -212,7 +234,9 @@ export default function RentalsPage() {
           {filteredRentals.map((rental) => {
             const depositRecord = getDepositRecordByRentalId(rental.id);
             const penaltyRecord = getPenaltyByRentalId(rental.id);
-            const transactions = getTransactionsByRentalId(rental.id);
+            const financeDetail = getFinanceDetailByRentalId(rental.id);
+            const fundFlows = getFundFlowsByRentalId(rental.id);
+            const vouchers = getVouchersByRentalId(rental.id);
             const isExpanded = expandedRentalId === rental.id;
             const depositAmount = depositRecord?.totalDepositAmount || 0;
 
@@ -308,149 +332,440 @@ export default function RentalsPage() {
 
                 {isExpanded && (
                   <div className="bg-gray-50 px-4 pb-4 pl-16">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                      <div className="bg-white rounded-lg p-4 border border-gray-100">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Wallet className="w-4 h-4 text-purple-500" />
-                          <h4 className="font-semibold text-gray-800">押金信息</h4>
-                        </div>
-                        {depositRecord ? (
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">押金金额</span>
-                              <span className="font-medium">{formatCurrency(depositRecord.totalDepositAmount)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">已收取</span>
-                              <span className="font-medium text-emerald-600">{formatCurrency(depositRecord.collectedAmount)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">已退还</span>
-                              <span className="font-medium text-blue-600">{formatCurrency(depositRecord.refundedAmount)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">已没收</span>
-                              <span className="font-medium text-red-600">{formatCurrency(depositRecord.forfeitedAmount)}</span>
-                            </div>
-                            <div className="flex justify-between pt-2 border-t border-gray-100">
-                              <span className="text-gray-500">状态</span>
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                                depositRecord.status === 'collected' ? 'bg-amber-100 text-amber-700' :
-                                depositRecord.status === 'refunded_full' ? 'bg-emerald-100 text-emerald-700' :
-                                depositRecord.status === 'refunded_partial' ? 'bg-blue-100 text-blue-700' :
-                                depositRecord.status === 'forfeited' ? 'bg-red-100 text-red-700' :
-                                'bg-gray-100 text-gray-700'
-                              }`}>
-                                {depositStatusLabels[depositRecord.status]}
-                              </span>
-                            </div>
-                            {depositRecord.isExempt && (
-                              <div className="mt-2 p-2 bg-emerald-50 rounded-lg">
-                                <p className="text-xs text-emerald-700">
-                                  <span className="font-medium">免押原因：</span>
-                                  {depositRecord.exemptReason}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500">暂无押金记录</p>
-                        )}
+                    <div className="pt-4">
+                      <div className="flex gap-2 mb-4 border-b border-gray-200">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveDetailTab('finance'); }}
+                          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            activeDetailTab === 'finance'
+                              ? 'border-emerald-500 text-emerald-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <PieChart className="w-4 h-4" />
+                          财务明细
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveDetailTab('flows'); }}
+                          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            activeDetailTab === 'flows'
+                              ? 'border-emerald-500 text-emerald-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <ArrowRightLeft className="w-4 h-4" />
+                          资金流水
+                          <span className="bg-gray-200 text-gray-600 text-xs px-1.5 py-0.5 rounded-full">
+                            {fundFlows.length}
+                          </span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveDetailTab('vouchers'); }}
+                          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            activeDetailTab === 'vouchers'
+                              ? 'border-emerald-500 text-emerald-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <FileText className="w-4 h-4" />
+                          凭证
+                          <span className="bg-gray-200 text-gray-600 text-xs px-1.5 py-0.5 rounded-full">
+                            {vouchers.length}
+                          </span>
+                        </button>
                       </div>
 
-                      <div className="bg-white rounded-lg p-4 border border-gray-100">
-                        <div className="flex items-center gap-2 mb-3">
-                          <AlertTriangle className="w-4 h-4 text-amber-500" />
-                          <h4 className="font-semibold text-gray-800">违约金信息</h4>
-                        </div>
-                        {penaltyRecord ? (
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">逾期天数</span>
-                              <span className="font-medium">{penaltyRecord.overdueDays} 天</span>
+                      {activeDetailTab === 'finance' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-white rounded-lg p-4 border border-gray-100">
+                            <div className="flex items-center gap-2 mb-4">
+                              <Wallet className="w-4 h-4 text-purple-500" />
+                              <h4 className="font-semibold text-gray-800">押金信息</h4>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">日租金</span>
-                              <span className="font-medium">{formatCurrency(penaltyRecord.dailyRate)}/天</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">违约金倍率</span>
-                              <span className="font-medium">{penaltyRecord.multiplier}x</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">计算金额</span>
-                              <span className="font-medium">{formatCurrency(penaltyRecord.totalPenalty)}</span>
-                            </div>
-                            {penaltyRecord.isAdjusted && (
-                              <div className="flex justify-between">
-                                <span className="text-gray-500">调整后金额</span>
-                                <span className="font-medium text-amber-600">{formatCurrency(penaltyRecord.adjustedAmount)}</span>
-                              </div>
-                            )}
-                            {penaltyRecord.adjustmentReason && (
-                              <div className="mt-2 p-2 bg-amber-50 rounded-lg">
-                                <p className="text-xs text-amber-700">
-                                  <span className="font-medium">调整原因：</span>
-                                  {penaltyRecord.adjustmentReason}
-                                </p>
-                              </div>
-                            )}
-                            {penaltyRecord.operator && (
-                              <div className="flex justify-between pt-2 border-t border-gray-100">
-                                <span className="text-gray-500">操作人</span>
-                                <span className="font-medium">{penaltyRecord.operator}</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : rental.status === 'active' || rental.status === 'overdue' ? (
-                          <div className="space-y-2 text-sm">
-                            <p className="text-gray-500">当前无逾期记录</p>
-                            {(() => {
-                              const penalty = calcPenalty(rental.id);
-                              if (penalty && penalty.overdueDays > 0) {
-                                return (
-                                  <div className="p-2 bg-amber-50 rounded-lg">
-                                    <p className="text-xs text-amber-700">
-                                      <span className="font-medium">预计逾期：</span>
-                                      {penalty.overdueDays}天，约 {formatCurrency(penalty.totalPenalty)}
+                            {depositRecord ? (
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">押金金额</span>
+                                  <span className="font-medium">{formatCurrency(depositRecord.totalDepositAmount)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">已收取</span>
+                                  <span className="font-medium text-emerald-600">{formatCurrency(depositRecord.collectedAmount)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">已退还</span>
+                                  <span className="font-medium text-blue-600">{formatCurrency(depositRecord.refundedAmount)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">已没收</span>
+                                  <span className="font-medium text-red-600">{formatCurrency(depositRecord.forfeitedAmount)}</span>
+                                </div>
+                                <div className="flex justify-between pt-2 border-t border-gray-100">
+                                  <span className="text-gray-500">状态</span>
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    depositRecord.status === 'collected' ? 'bg-amber-100 text-amber-700' :
+                                    depositRecord.status === 'refunded_full' ? 'bg-emerald-100 text-emerald-700' :
+                                    depositRecord.status === 'refunded_partial' ? 'bg-blue-100 text-blue-700' :
+                                    depositRecord.status === 'forfeited' ? 'bg-red-100 text-red-700' :
+                                    'bg-gray-100 text-gray-700'
+                                  }`}>
+                                    {depositStatusLabels[depositRecord.status]}
+                                  </span>
+                                </div>
+                                {depositRecord.isExempt && (
+                                  <div className="mt-2 p-2 bg-emerald-50 rounded-lg">
+                                    <p className="text-xs text-emerald-700">
+                                      <span className="font-medium">免押原因：</span>
+                                      {depositRecord.exemptReason}
                                     </p>
                                   </div>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500">无违约金记录</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {transactions.length > 0 && (
-                      <div className="mt-4 bg-white rounded-lg p-4 border border-gray-100">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Receipt className="w-4 h-4 text-blue-500" />
-                          <h4 className="font-semibold text-gray-800">财务流水</h4>
-                        </div>
-                        <div className="space-y-2">
-                          {transactions.map((tx) => (
-                            <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                              <div>
-                                <p className="text-sm font-medium text-gray-700">{tx.description}</p>
-                                <p className="text-xs text-gray-400">
-                                  {formatDate(tx.createdAt)} · {tx.operator}
-                                </p>
+                                )}
                               </div>
-                              <span className={`text-sm font-semibold ${
-                                tx.direction === 'income' ? 'text-emerald-600' : 'text-red-500'
-                              }`}>
-                                {tx.direction === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                            ) : (
+                              <p className="text-sm text-gray-500">暂无押金记录</p>
+                            )}
+                          </div>
+
+                          <div className="bg-white rounded-lg p-4 border border-gray-100">
+                            <div className="flex items-center gap-2 mb-4">
+                              <AlertTriangle className="w-4 h-4 text-amber-500" />
+                              <h4 className="font-semibold text-gray-800">违约金信息</h4>
+                            </div>
+                            {penaltyRecord ? (
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">逾期天数</span>
+                                  <span className="font-medium">{penaltyRecord.overdueDays} 天</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">日租金</span>
+                                  <span className="font-medium">{formatCurrency(penaltyRecord.dailyRate)}/天</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">违约金倍率</span>
+                                  <span className="font-medium">{penaltyRecord.multiplier}x</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500">计算金额</span>
+                                  <span className="font-medium">{formatCurrency(penaltyRecord.totalPenalty)}</span>
+                                </div>
+                                {penaltyRecord.isAdjusted && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-500">调整后金额</span>
+                                    <span className="font-medium text-amber-600">{formatCurrency(penaltyRecord.adjustedAmount)}</span>
+                                  </div>
+                                )}
+                                {penaltyRecord.adjustmentReason && (
+                                  <div className="mt-2 p-2 bg-amber-50 rounded-lg">
+                                    <p className="text-xs text-amber-700">
+                                      <span className="font-medium">调整原因：</span>
+                                      {penaltyRecord.adjustmentReason}
+                                    </p>
+                                  </div>
+                                )}
+                                {penaltyRecord.operator && (
+                                  <div className="flex justify-between pt-2 border-t border-gray-100">
+                                    <span className="text-gray-500">操作人</span>
+                                    <span className="font-medium">{penaltyRecord.operator}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : rental.status === 'active' || rental.status === 'overdue' ? (
+                              <div className="space-y-2 text-sm">
+                                <p className="text-gray-500">当前无逾期记录</p>
+                                {(() => {
+                                  const penalty = calcPenalty(rental.id);
+                                  if (penalty && penalty.overdueDays > 0) {
+                                    return (
+                                      <div className="p-2 bg-amber-50 rounded-lg">
+                                        <p className="text-xs text-amber-700">
+                                          <span className="font-medium">预计逾期：</span>
+                                          {penalty.overdueDays}天，约 {formatCurrency(penalty.totalPenalty)}
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-500">无违约金记录</p>
+                            )}
+                          </div>
+
+                          <div className="bg-white rounded-lg p-4 border border-gray-100 md:col-span-2">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-2">
+                                <PieChart className="w-4 h-4 text-blue-500" />
+                                <h4 className="font-semibold text-gray-800">财务明细拆分</h4>
+                              </div>
+                            </div>
+                            {financeDetail ? (
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="p-3 bg-emerald-50 rounded-lg">
+                                  <p className="text-xs text-emerald-600">单品租金收入</p>
+                                  <p className="text-lg font-bold text-emerald-700 mt-1">{formatCurrency(financeDetail.baseRentalFee)}</p>
+                                </div>
+                                <div className="p-3 bg-amber-50 rounded-lg">
+                                  <p className="text-xs text-amber-600">押金扣款收入</p>
+                                  <p className="text-lg font-bold text-amber-700 mt-1">{formatCurrency(financeDetail.depositForfeited)}</p>
+                                </div>
+                                <div className="p-3 bg-red-50 rounded-lg">
+                                  <p className="text-xs text-red-600">逾期罚金</p>
+                                  <p className="text-lg font-bold text-red-700 mt-1">{formatCurrency(financeDetail.penaltyAmount)}</p>
+                                </div>
+                                <div className="p-3 bg-purple-50 rounded-lg">
+                                  <p className="text-xs text-purple-600">实际收入合计</p>
+                                  <p className="text-lg font-bold text-purple-700 mt-1">{formatCurrency(financeDetail.actualIncome)}</p>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded-lg">
+                                  <p className="text-xs text-gray-600">套餐优惠抵扣</p>
+                                  <p className="text-lg font-bold text-gray-700 mt-1">-{formatCurrency(financeDetail.packageDiscount)}</p>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded-lg">
+                                  <p className="text-xs text-gray-600">优惠券减免</p>
+                                  <p className="text-lg font-bold text-gray-700 mt-1">-{formatCurrency(financeDetail.couponDiscount)}</p>
+                                </div>
+                                <div className="p-3 bg-blue-50 rounded-lg">
+                                  <p className="text-xs text-blue-600">配送附加费</p>
+                                  <p className="text-lg font-bold text-blue-700 mt-1">{formatCurrency(financeDetail.deliveryFee)}</p>
+                                </div>
+                                <div className="p-3 bg-rose-50 rounded-lg">
+                                  <p className="text-xs text-rose-600">损坏赔偿</p>
+                                  <p className="text-lg font-bold text-rose-700 mt-1">{formatCurrency(financeDetail.damageCompensation)}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="p-3 bg-emerald-50 rounded-lg">
+                                  <p className="text-xs text-emerald-600">单品租金收入</p>
+                                  <p className="text-lg font-bold text-emerald-700 mt-1">{formatCurrency(rental.price)}</p>
+                                </div>
+                                <div className="p-3 bg-gray-100 rounded-lg">
+                                  <p className="text-xs text-gray-500">押金扣款收入</p>
+                                  <p className="text-lg font-bold text-gray-400 mt-1">待结算</p>
+                                </div>
+                                <div className="p-3 bg-gray-100 rounded-lg">
+                                  <p className="text-xs text-gray-500">逾期罚金</p>
+                                  <p className="text-lg font-bold text-gray-400 mt-1">待结算</p>
+                                </div>
+                                <div className="p-3 bg-purple-50 rounded-lg">
+                                  <p className="text-xs text-purple-600">预计收入</p>
+                                  <p className="text-lg font-bold text-purple-700 mt-1">{formatCurrency(rental.price)}</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {activeDetailTab === 'flows' && (
+                        <div className="bg-white rounded-lg border border-gray-100">
+                          <div className="p-4 border-b border-gray-100">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <ArrowRightLeft className="w-4 h-4 text-blue-500" />
+                                <h4 className="font-semibold text-gray-800">资金流水记录</h4>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                共 {fundFlows.length} 条流水
                               </span>
                             </div>
-                          ))}
+                          </div>
+                          {fundFlows.length > 0 ? (
+                            <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+                              {fundFlows.map((flow) => (
+                                <div key={flow.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex items-start gap-3">
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                        flow.direction === 'income' ? 'bg-emerald-100' : 'bg-red-100'
+                                      }`}>
+                                        <ArrowRightLeft className={`w-4 h-4 ${
+                                          flow.direction === 'income' ? 'text-emerald-600' : 'text-red-600'
+                                        }`} />
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-medium text-gray-800">
+                                            {transactionTypeLabels[flow.type] || flow.type}
+                                          </p>
+                                          <span className={`px-1.5 py-0.5 rounded text-xs ${
+                                            flow.voucherStatus === 'issued' 
+                                              ? 'bg-blue-100 text-blue-700' 
+                                              : 'bg-gray-100 text-gray-600'
+                                          }`}>
+                                            {flow.voucherStatus === 'issued' ? '已开票' : '待开票'}
+                                          </span>
+                                        </div>
+                                        <p className="text-sm text-gray-500 mt-1">{flow.changeReason}</p>
+                                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                                          <span>流水号：{flow.flowNo}</span>
+                                          <span>操作人：{flow.operator}</span>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                          {formatDateTime(flow.operateTime)}
+                                        </p>
+                                        {flow.remark && (
+                                          <p className="text-xs text-gray-500 mt-1">
+                                            备注：{flow.remark}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className={`text-lg font-bold ${
+                                        flow.direction === 'income' ? 'text-emerald-600' : 'text-red-500'
+                                      }`}>
+                                        {flow.direction === 'income' ? '+' : '-'}{formatCurrency(flow.amount)}
+                                      </p>
+                                      <p className="text-xs text-gray-400 mt-1">
+                                        {financeCategoryLabels[flow.financeCategory]}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {flow.voucherNo && (
+                                    <div className="mt-2 pt-2 border-t border-gray-100">
+                                      <p className="text-xs text-gray-500">
+                                        凭证号：<span className="text-blue-600 font-medium">{flow.voucherNo}</span>
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="py-12 text-center">
+                              <p className="text-gray-500 text-sm">暂无资金流水记录</p>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      )}
+
+                      {activeDetailTab === 'vouchers' && (
+                        <div className="bg-white rounded-lg border border-gray-100">
+                          <div className="p-4 border-b border-gray-100">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-amber-500" />
+                                <h4 className="font-semibold text-gray-800">财务凭证</h4>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  leftIcon={<FileText className="w-4 h-4" />}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleIssueVoucher(rental.id, 'receipt');
+                                  }}
+                                >
+                                  开收款凭证
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  leftIcon={<FileText className="w-4 h-4" />}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleIssueVoucher(rental.id, 'payment');
+                                  }}
+                                >
+                                  开付款凭证
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                          {vouchers.length > 0 ? (
+                            <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+                              {vouchers.map((voucher) => (
+                                <div key={voucher.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex items-start gap-3">
+                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                        voucher.type === 'receipt' ? 'bg-emerald-100' : 'bg-red-100'
+                                      }`}>
+                                        <Receipt className={`w-4 h-4 ${
+                                          voucher.type === 'receipt' ? 'text-emerald-600' : 'text-red-600'
+                                        }`} />
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-medium text-gray-800">
+                                            {voucher.type === 'receipt' ? '收款凭证' : '付款凭证'}
+                                          </p>
+                                          <span className="px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                                            {voucher.voucherNo}
+                                          </span>
+                                        </div>
+                                        <p className="text-sm text-gray-500 mt-1">
+                                          包含 {voucher.items.length} 个财务项
+                                        </p>
+                                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                                          <span>操作人：{voucher.operator}</span>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                          {formatDateTime(voucher.issuedAt)}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className={`text-lg font-bold ${
+                                        voucher.type === 'receipt' ? 'text-emerald-600' : 'text-red-500'
+                                      }`}>
+                                        {voucher.type === 'receipt' ? '+' : '-'}{formatCurrency(voucher.amount)}
+                                      </p>
+                                      <Button
+                                        size="sm"
+                                        variant="text"
+                                        leftIcon={<Download className="w-3.5 h-3.5" />}
+                                        className="mt-2"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const customer = customers.find((c) => c.id === voucher.customerId);
+                                          exportVoucherHTML({
+                                            voucherNo: voucher.voucherNo,
+                                            type: voucher.type,
+                                            customerName: customer?.name || '未知',
+                                            rentalId: voucher.rentalId,
+                                            operator: voucher.operator,
+                                            issuedAt: formatDateTime(voucher.issuedAt),
+                                            amount: voucher.amount,
+                                            items: voucher.items.map((item) => ({
+                                              description: item.name,
+                                              amount: item.amount,
+                                              remark: '',
+                                            })),
+                                          });
+                                        }}
+                                      >
+                                        导出
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 pt-3 border-t border-gray-100">
+                                    <p className="text-xs text-gray-500 mb-2">凭证明细：</p>
+                                    <div className="space-y-1">
+                                      {voucher.items.map((item, idx) => (
+                                        <div key={idx} className="flex justify-between text-xs">
+                                          <span className="text-gray-600">{item.name}</span>
+                                          <span className="text-gray-800">{formatCurrency(item.amount)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="py-12 text-center">
+                              <p className="text-gray-500 text-sm">暂无凭证记录</p>
+                              <p className="text-gray-400 text-xs mt-1">点击上方按钮开具财务凭证</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -607,7 +922,7 @@ export default function RentalsPage() {
         isOpen={isReturnModalOpen}
         onClose={() => setIsReturnModalOpen(false)}
         title="归还确认 & 财务结算"
-        size="lg"
+        size="xl"
       >
         {selectedRental && (
           <div className="space-y-4">
@@ -642,7 +957,7 @@ export default function RentalsPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   违约金金额（元）
@@ -673,15 +988,45 @@ export default function RentalsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  调整原因
+                  配送附加费（元）
                 </label>
                 <input
-                  type="text"
-                  value={returnFormData.adjustmentReason}
-                  onChange={(e) => setReturnFormData({ ...returnFormData, adjustmentReason: e.target.value })}
+                  type="number"
+                  value={returnFormData.deliveryFee}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, deliveryFee: e.target.value })}
+                  min="0"
+                  step="0.01"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  placeholder="如有调整请填写原因"
                 />
+                <p className="text-xs text-gray-500 mt-1">配送或上门服务费</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  套餐优惠抵扣（元）
+                </label>
+                <input
+                  type="number"
+                  value={returnFormData.packageDiscount}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, packageDiscount: e.target.value })}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">套餐优惠减免金额</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  优惠券减免（元）
+                </label>
+                <input
+                  type="number"
+                  value={returnFormData.couponDiscount}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, couponDiscount: e.target.value })}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">客户使用优惠券抵扣</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -692,6 +1037,18 @@ export default function RentalsPage() {
                   value={returnFormData.operator}
                   onChange={(e) => setReturnFormData({ ...returnFormData, operator: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  调整原因/备注
+                </label>
+                <input
+                  type="text"
+                  value={returnFormData.adjustmentReason}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, adjustmentReason: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  placeholder="如有调整请填写原因"
                 />
               </div>
             </div>
@@ -709,25 +1066,23 @@ export default function RentalsPage() {
               return (
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                   <h4 className="font-semibold text-purple-800 mb-3">押金结算预览</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
                       <span className="text-purple-600">已收押金</span>
-                      <span className="font-medium">{formatCurrency(deposit.collectedAmount)}</span>
+                      <p className="font-medium text-lg">{formatCurrency(deposit.collectedAmount)}</p>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-purple-600">扣除合计（违约金+赔偿）</span>
-                      <span className="font-medium text-red-600">-{formatCurrency(totalDeduction)}</span>
+                    <div>
+                      <span className="text-purple-600">扣除合计</span>
+                      <p className="font-medium text-lg text-red-600">-{formatCurrency(totalDeduction)}</p>
                     </div>
-                    <div className="flex justify-between pt-2 border-t border-purple-200">
+                    <div>
                       <span className="text-purple-700 font-medium">应退押金</span>
-                      <span className="font-bold text-emerald-600">{formatCurrency(refundAmount)}</span>
+                      <p className="font-bold text-lg text-emerald-600">{formatCurrency(refundAmount)}</p>
                     </div>
-                    {forfeitAmount > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-purple-600">没收押金</span>
-                        <span className="font-medium text-amber-600">{formatCurrency(forfeitAmount)}</span>
-                      </div>
-                    )}
+                    <div>
+                      <span className="text-purple-600">没收押金</span>
+                      <p className="font-medium text-lg text-amber-600">{formatCurrency(forfeitAmount)}</p>
+                    </div>
                   </div>
                 </div>
               );
