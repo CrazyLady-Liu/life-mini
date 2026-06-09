@@ -13,7 +13,7 @@ import {
   TrendingUp,
   TrendingDown,
   DollarSign,
-  PieChart,
+  PieChart as PieChartIcon,
   ArrowRightLeft,
   Receipt,
 } from 'lucide-react';
@@ -365,7 +365,7 @@ export default function ReportsPage() {
 
   const tabs = [
     { id: 'overview', label: '综合概览', icon: FileText },
-    { id: 'finance', label: '财务分析', icon: PieChart },
+    { id: 'finance', label: '财务分析', icon: PieChartIcon },
     { id: 'export', label: '数据导出', icon: Download },
   ];
 

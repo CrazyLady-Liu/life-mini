@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, DollarSign, PieChart, ArrowRightLeft, FileText, Download } from 'lucide-react';
+import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, CreditCard, PieChart, ArrowRightLeft, FileText, Download } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
