@@ -11,6 +11,8 @@ import {
   Warehouse,
   FileBarChart,
   Tent,
+  Settings,
+  Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -53,6 +55,12 @@ const menuItems = [
     category: '数据中心',
     items: [
       { path: '/reports', label: '数据报表', icon: FileBarChart },
+    ],
+  },
+  {
+    category: '系统设置',
+    items: [
+      { path: '/finance-settings', label: '财务设置', icon: Wallet },
     ],
   },
 ];

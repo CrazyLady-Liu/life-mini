@@ -8,6 +8,14 @@ export type MaintenanceStatus = 'pending' | 'in_progress' | 'completed' | 'cance
 
 export type InventoryCheckStatus = 'pending' | 'in_progress' | 'completed';
 
+export type DepositStatus = 'pending' | 'collected' | 'refunded_full' | 'refunded_partial' | 'forfeited';
+
+export type DepositRuleType = 'category' | 'equipment' | 'package';
+
+export type TransactionType = 'deposit_collect' | 'deposit_refund' | 'deposit_forfeit' | 'penalty' | 'rental_fee' | 'damage_compensation';
+
+export type EquipmentValueLevel = 'normal' | 'high';
+
 export interface Equipment {
   id: string;
   name: string;
@@ -159,4 +167,84 @@ export interface EquipmentHealth {
     moderateDamageCount: number;
     minorDamageCount: number;
   };
+}
+
+export interface DepositRule {
+  id: string;
+  name: string;
+  type: DepositRuleType;
+  category?: string;
+  equipmentId?: string;
+  packageId?: string;
+  depositAmount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PenaltyRule {
+  id: string;
+  name: string;
+  valueLevel: EquipmentValueLevel;
+  dailyRateMultiplier: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DepositRecord {
+  id: string;
+  rentalId: string;
+  customerId: string;
+  equipmentId: string;
+  totalDepositAmount: number;
+  collectedAmount: number;
+  refundedAmount: number;
+  forfeitedAmount: number;
+  status: DepositStatus;
+  isExempt: boolean;
+  exemptReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinancialTransaction {
+  id: string;
+  rentalId: string;
+  customerId: string;
+  type: TransactionType;
+  amount: number;
+  direction: 'income' | 'expense';
+  description: string;
+  operator: string;
+  createdAt: string;
+}
+
+export interface RentalPenalty {
+  id: string;
+  rentalId: string;
+  overdueDays: number;
+  dailyRate: number;
+  multiplier: number;
+  totalPenalty: number;
+  adjustedAmount: number;
+  adjustmentReason?: string;
+  isAdjusted: boolean;
+  operator?: string;
+  createdAt: string;
+}
+
+export interface DepositExemptCustomer {
+  id: string;
+  customerId: string;
+  reason: string;
+  minRentalCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EquipmentWithDeposit extends Equipment {
+  depositAmount: number;
+  valueLevel: EquipmentValueLevel;
 }

@@ -88,3 +88,33 @@ export const maintenanceTypes = [
   '性能检测',
   '其他',
 ];
+
+export const depositStatusLabels: Record<string, string> = {
+  pending: '待收取',
+  collected: '已预收',
+  refunded_full: '全额退还',
+  refunded_partial: '部分扣除',
+  forfeited: '全额没收',
+};
+
+export const depositRuleTypeLabels: Record<string, string> = {
+  category: '分类押金',
+  equipment: '单件押金',
+  package: '套餐押金',
+};
+
+export const transactionTypeLabels: Record<string, string> = {
+  deposit_collect: '押金收取',
+  deposit_refund: '押金退还',
+  deposit_forfeit: '押金没收',
+  penalty: '违约金',
+  rental_fee: '租赁费用',
+  damage_compensation: '损坏赔偿',
+};
+
+export const equipmentValueLevelLabels: Record<string, string> = {
+  normal: '普通装备',
+  high: '高价值装备',
+};
+
+export const highValueThreshold = 800;

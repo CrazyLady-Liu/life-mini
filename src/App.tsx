@@ -10,6 +10,7 @@ import Damage from "@/pages/Damage/Damage";
 import Maintenance from "@/pages/Maintenance/Maintenance";
 import Inventory from "@/pages/Inventory/Inventory";
 import Reports from "@/pages/Reports/Reports";
+import FinanceSettings from "@/pages/FinanceSettings/FinanceSettings";
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="maintenance" element={<Maintenance />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="finance-settings" element={<FinanceSettings />} />
         </Route>
       </Routes>
     </Router>
