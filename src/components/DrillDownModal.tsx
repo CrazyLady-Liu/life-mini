@@ -41,6 +41,7 @@ import type { Rental, DamageRecord, Maintenance, Equipment } from '@/types';
 
 export type DrillDownLevel =
   | 'monthly'
+  | 'allEquipments'
   | 'category'
   | 'equipment'
   | 'rentalDetail'
@@ -354,6 +355,116 @@ export default function DrillDownModal({
                 共 {monthRentals.length} 条，显示前 20 条
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const sortedEquipments = useMemo(() => {
+    return [...equipments].sort((a, b) => b.usageCount - a.usageCount);
+  }, [equipments]);
+
+  const renderAllEquipments = () => {
+    const totalUsage = equipments.reduce((sum, e) => sum + e.usageCount, 0);
+    const totalValue = equipments.reduce((sum, e) => sum + e.purchasePrice, 0);
+    const avgUsage = equipments.length ? Math.round(totalUsage / equipments.length) : 0;
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-emerald-50 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Package className="w-4 h-4 text-emerald-600" />
+              <p className="text-sm text-emerald-600">装备总数</p>
+            </div>
+            <p className="text-2xl font-bold text-emerald-700">{equipments.length} 件</p>
+          </div>
+          <div className="bg-amber-50 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp className="w-4 h-4 text-amber-600" />
+              <p className="text-sm text-amber-600">累计使用</p>
+            </div>
+            <p className="text-2xl font-bold text-amber-700">{totalUsage} 次</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Activity className="w-4 h-4 text-blue-600" />
+              <p className="text-sm text-blue-600">平均使用</p>
+            </div>
+            <p className="text-2xl font-bold text-blue-700">{avgUsage} 次/件</p>
+          </div>
+          <div className="bg-purple-50 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <DollarSign className="w-4 h-4 text-purple-600" />
+              <p className="text-sm text-purple-600">采购总价值</p>
+            </div>
+            <p className="text-2xl font-bold text-purple-700">{formatCurrency(totalValue)}</p>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-emerald-500" />
+            全部装备使用排行（点击查看装备详情）
+          </h4>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {sortedEquipments.map((eq, idx) => {
+              const health = healthScores.find((h) => h.equipmentId === eq.id);
+              return (
+                <div
+                  key={eq.id}
+                  className="p-3 bg-gray-50 rounded-xl hover:bg-gray-100 cursor-pointer transition-colors group"
+                  onClick={() =>
+                    onDrillDown({
+                      level: 'equipment',
+                      title: eq.name,
+                      equipmentId: eq.id,
+                      equipmentName: eq.name,
+                    })
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="w-7 h-7 flex items-center justify-center bg-amber-100 text-amber-700 rounded-full text-sm font-bold">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <p className="font-medium text-gray-900">{eq.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {eq.brand} {eq.model} · {eq.category}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="font-bold text-emerald-600">{eq.usageCount} 次</p>
+                        {health && (
+                          <div className="flex items-center gap-1 justify-end">
+                            <div className="w-16 bg-gray-200 rounded-full h-1">
+                              <div
+                                className="h-1 rounded-full"
+                                style={{
+                                  width: `${health.healthScore}%`,
+                                  backgroundColor: getHealthScoreColor(health.healthScore),
+                                }}
+                              ></div>
+                            </div>
+                            <span
+                              className="text-xs"
+                              style={{ color: getHealthScoreColor(health.healthScore) }}
+                            >
+                              {health.healthScore}分
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-emerald-500 transition-colors" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -954,6 +1065,8 @@ export default function DrillDownModal({
     switch (context.level) {
       case 'monthly':
         return renderMonthly();
+      case 'allEquipments':
+        return renderAllEquipments();
       case 'category':
         return renderCategory();
       case 'equipment':
@@ -970,17 +1083,30 @@ export default function DrillDownModal({
   };
 
   const getBreadcrumbs = () => {
-    const crumbs: string[] = [];
-    if (context.month) crumbs.push(context.month);
-    if (context.category) crumbs.push(context.category);
-    if (context.equipmentName) crumbs.push(context.equipmentName);
-    if (context.level === 'rentalDetail') crumbs.push('租赁记录');
-    if (context.level === 'damageDetail') crumbs.push('损耗记录');
-    if (context.level === 'maintenanceDetail') crumbs.push('维护记录');
+    const crumbs: { label: string; level: DrillDownLevel }[] = [];
+    if (context.level === 'monthly' || context.month) {
+      crumbs.push({ label: context.month || '月度概览', level: 'monthly' });
+    }
+    if (context.level === 'allEquipments') {
+      crumbs.push({ label: '全部装备', level: 'allEquipments' });
+    }
+    if (context.category) {
+      crumbs.push({ label: context.category, level: 'category' });
+    }
+    if (context.equipmentName) {
+      crumbs.push({ label: context.equipmentName, level: 'equipment' });
+    }
+    if (context.level === 'rentalDetail') {
+      crumbs.push({ label: '租赁记录', level: 'rentalDetail' });
+    }
+    if (context.level === 'damageDetail') {
+      crumbs.push({ label: '损耗记录', level: 'damageDetail' });
+    }
+    if (context.level === 'maintenanceDetail') {
+      crumbs.push({ label: '维护记录', level: 'maintenanceDetail' });
+    }
     return crumbs;
   };
-
-  const canGoBack = context.level !== 'monthly' && context.level !== 'category';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={context.title} size="xl">
@@ -989,7 +1115,6 @@ export default function DrillDownModal({
           <button
             onClick={onDrillUp}
             className="flex items-center gap-1 text-gray-500 hover:text-emerald-600 transition-colors"
-            disabled={!canGoBack && context.level === 'monthly'}
           >
             <ArrowLeft className="w-4 h-4" />
             返回
@@ -1004,10 +1129,10 @@ export default function DrillDownModal({
                 className={
                   idx === getBreadcrumbs().length - 1
                     ? 'text-gray-900 font-medium'
-                    : 'text-gray-500'
+                    : 'text-gray-500 hover:text-emerald-600 cursor-pointer'
                 }
               >
-                {crumb}
+                {crumb.label}
               </span>
             </span>
           ))}

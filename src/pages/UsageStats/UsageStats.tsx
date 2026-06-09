@@ -47,11 +47,10 @@ export default function UsageStatsPage() {
   const { equipments, rentals, customers, damageRecords, maintenances } = useAppStore();
   const [timeRange, setTimeRange] = useState('all');
   const [activeTab, setActiveTab] = useState<'usage' | 'health'>('usage');
-  const [drillContext, setDrillContext] = useState<DrillDownContext>({
-    level: 'monthly',
-    title: '',
-  });
+  const [drillHistory, setDrillHistory] = useState<DrillDownContext[]>([]);
   const [isDrillOpen, setIsDrillOpen] = useState(false);
+
+  const drillContext = drillHistory.length > 0 ? drillHistory[drillHistory.length - 1] : { level: 'monthly' as const, title: '' };
 
   const healthScores = useMemo(() => {
     return calculateAllHealthScores(equipments, damageRecords, maintenances);
@@ -94,26 +93,22 @@ export default function UsageStatsPage() {
   const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#64748b'];
 
   const handleDrillDown = (context: DrillDownContext) => {
-    setDrillContext(context);
+    setDrillHistory((prev) => [...prev, context]);
     setIsDrillOpen(true);
   };
 
   const handleDrillUp = () => {
-    const levels: DrillDownContext['level'][] = [
-      'monthly',
-      'category',
-      'equipment',
-      'rentalDetail',
-      'damageDetail',
-      'maintenanceDetail',
-    ];
-    const currentIndex = levels.indexOf(drillContext.level);
-    if (currentIndex > 0) {
-      const newLevel = levels[currentIndex - 1];
-      setDrillContext({ ...drillContext, level: newLevel });
-    } else {
+    if (drillHistory.length <= 1) {
       setIsDrillOpen(false);
+      setDrillHistory([]);
+    } else {
+      setDrillHistory((prev) => prev.slice(0, -1));
     }
+  };
+
+  const handleCloseDrill = () => {
+    setIsDrillOpen(false);
+    setDrillHistory([]);
   };
 
   const rentalTrend = useMemo(() => {
@@ -377,7 +372,7 @@ export default function UsageStatsPage() {
                   点击下钻 →
                 </span>
               </div>
-              <div className="h-72">
+              <div className="h-72" onClick={(e) => e.stopPropagation()}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={rentalTrend}
@@ -444,7 +439,7 @@ export default function UsageStatsPage() {
                   点击下钻 →
                 </span>
               </div>
-              <div className="h-72">
+              <div className="h-72" onClick={(e) => e.stopPropagation()}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -483,6 +478,12 @@ export default function UsageStatsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div
               className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() =>
+                handleDrillDown({
+                  level: 'allEquipments',
+                  title: '装备使用排名',
+                })
+              }
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">装备使用次数排名</h3>
@@ -490,7 +491,7 @@ export default function UsageStatsPage() {
                   点击下钻 →
                 </span>
               </div>
-              <div className="h-72">
+              <div className="h-72" onClick={(e) => e.stopPropagation()}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={topEquipments}
