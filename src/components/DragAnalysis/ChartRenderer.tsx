@@ -211,26 +211,44 @@ function DualAxisChartRenderer({
   );
 }
 
-function ScatterChartRenderer({ data }: { data: ChartDataPoint[] }) {
+function ScatterChartRenderer({
+  data,
+  xField,
+  yField,
+}: {
+  data: ChartDataPoint[];
+  xField?: ConfigField;
+  yField?: ConfigField;
+}) {
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+      <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 30 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis
           type="number"
           dataKey="x"
-          name="X轴"
+          name={xField?.name || 'X轴'}
           tick={{ fontSize: 12 }}
           stroke="#9ca3af"
-          label={{ value: 'X轴', position: 'bottom', offset: -5, style: { fontSize: 12, fill: '#6b7280' } }}
+          label={{
+            value: xField?.name || 'X轴',
+            position: 'bottom',
+            offset: 0,
+            style: { fontSize: 12, fill: '#6b7280' },
+          }}
         />
         <YAxis
           type="number"
           dataKey="y"
-          name="Y轴"
+          name={yField?.name || 'Y轴'}
           tick={{ fontSize: 12 }}
           stroke="#9ca3af"
-          label={{ value: 'Y轴', angle: -90, position: 'left', style: { fontSize: 12, fill: '#6b7280' } }}
+          label={{
+            value: yField?.name || 'Y轴',
+            angle: -90,
+            position: 'left',
+            style: { fontSize: 12, fill: '#6b7280' },
+          }}
         />
         <ZAxis type="number" dataKey="value" range={[4, 20]} />
         <Tooltip
@@ -241,13 +259,13 @@ function ScatterChartRenderer({ data }: { data: ChartDataPoint[] }) {
             boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
           }}
           cursor={{ strokeDasharray: '3 3' }}
+          formatter={(value: number, name: string) => [value, name]}
         />
         <Legend />
         <Scatter name="数据点" data={data} fill="#10b981">
           {data.map((entry, index) => (
             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
           ))}
-          <LabelList dataKey="name" position="top" />
         </Scatter>
       </ScatterChart>
     </ResponsiveContainer>
@@ -537,7 +555,13 @@ export default function ChartRenderer({
     case 'dualAxis':
       return <DualAxisChartRenderer data={data} yFields={yFields} />;
     case 'scatter':
-      return <ScatterChartRenderer data={scatterData || []} />;
+      return (
+        <ScatterChartRenderer
+          data={scatterData || []}
+          xField={xFields[0]}
+          yField={yFields[0]}
+        />
+      );
     case 'heatmap':
       return <HeatmapRenderer data={heatmapData || []} />;
     case 'funnel':
