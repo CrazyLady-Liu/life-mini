@@ -39,14 +39,16 @@ import {
   Activity,
   ShieldAlert,
   Zap,
+  Sparkles,
 } from 'lucide-react';
 import DrillDownModal from '@/components/DrillDownModal';
 import type { DrillDownContext } from '@/components/DrillDownModal';
+import { DragAnalysisCanvas } from '@/components/DragAnalysis';
 
 export default function UsageStatsPage() {
   const { equipments, rentals, customers, damageRecords, maintenances } = useAppStore();
   const [timeRange, setTimeRange] = useState('all');
-  const [activeTab, setActiveTab] = useState<'usage' | 'health'>('usage');
+  const [activeTab, setActiveTab] = useState<'usage' | 'health' | 'analysis'>('usage');
   const [drillHistory, setDrillHistory] = useState<DrillDownContext[]>([]);
   const [isDrillOpen, setIsDrillOpen] = useState(false);
 
@@ -259,6 +261,17 @@ export default function UsageStatsPage() {
             >
               健康度评估
             </button>
+            <button
+              onClick={() => setActiveTab('analysis')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                activeTab === 'analysis'
+                  ? 'bg-white text-emerald-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              自助分析
+            </button>
           </div>
           {activeTab === 'usage' && (
             <select
@@ -275,7 +288,11 @@ export default function UsageStatsPage() {
         </div>
       </div>
 
-      {activeTab === 'usage' ? (
+      {activeTab === 'analysis' ? (
+        <div className="h-[calc(100vh-12rem)] min-h-[600px]">
+          <DragAnalysisCanvas />
+        </div>
+      ) : activeTab === 'usage' ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div
