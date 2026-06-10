@@ -7,6 +7,7 @@ import Suppliers from "@/pages/Suppliers/Suppliers";
 import Rentals from "@/pages/Rentals/Rentals";
 import UsageStats from "@/pages/UsageStats/UsageStats";
 import Damage from "@/pages/Damage/Damage";
+import DamageDetail from "@/pages/Damage/DamageDetail";
 import Maintenance from "@/pages/Maintenance/Maintenance";
 import Inventory from "@/pages/Inventory/Inventory";
 import Reports from "@/pages/Reports/Reports";
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="rentals" element={<Rentals />} />
           <Route path="usage-stats" element={<UsageStats />} />
           <Route path="damage" element={<Damage />} />
+          <Route path="damage/:id" element={<DamageDetail />} />
           <Route path="maintenance" element={<Maintenance />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="reports" element={<Reports />} />
