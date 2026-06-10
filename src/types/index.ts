@@ -58,6 +58,8 @@ export interface Equipment {
   updatedAt: string;
 }
 
+export type AddEquipmentInput = Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'usageCount' | 'equipmentNo'> & { equipmentNo?: string };
+
 export interface Customer {
   id: string;
   name: string;

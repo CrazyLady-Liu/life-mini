@@ -29,6 +29,7 @@ import type {
   CustomerCoupon,
   FinanceVoucher,
   VoucherStatus,
+  AddEquipmentInput,
 } from '../types';
 import {
   mockEquipments,
@@ -78,7 +79,7 @@ interface AppState {
   customerCoupons: CustomerCoupon[];
   financeVouchers: FinanceVoucher[];
   
-  addEquipment: (equipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'usageCount' | 'equipmentNo'> & { equipmentNo?: string }>) => void;
+  addEquipment: (equipment: AddEquipmentInput) => void;
   updateEquipment: (id: string, equipment: Partial<Equipment>) => void;
   deleteEquipment: (id: string) => void;
   

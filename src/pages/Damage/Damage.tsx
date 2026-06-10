@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User, Info, CheckCircle, XCircle, Tag, Building2, User as UserIcon } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User, Info, CheckCircle, XCircle, Tag, Building2, UserCheck } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
@@ -208,7 +208,7 @@ export default function DamagePage() {
             <span className="text-gray-900 font-medium">{selectedEquipment.department}</span>
           </div>
           <div className="flex items-center gap-2">
-            <UserIcon className="w-4 h-4 text-emerald-500" />
+            <UserCheck className="w-4 h-4 text-emerald-500" />
             <span className="text-gray-500">使用人：</span>
             <span className="text-gray-900 font-medium">{selectedEquipment.custodian}</span>
           </div>
@@ -561,7 +561,7 @@ export default function DamagePage() {
       <Modal
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
-        title="确认提交确认"
+        title="提交确认"
         size="md"
       >
         <div className="space-y-4">
