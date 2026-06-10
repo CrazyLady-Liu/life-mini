@@ -1,11 +1,20 @@
 import { useState, useMemo } from 'react';
-import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User, Info, CheckCircle, XCircle, Tag, Building2, User as UserIcon } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
 import { formatCurrency, formatDate } from '@/utils/format';
-import type { DamageLevel } from '@/types';
+import type { DamageLevel, Equipment } from '@/types';
+
+const DAMAGE_UNAVAILABLE_STATUSES = ['scrapped', 'decommissioned'];
+
+const damageLevelInfo: Record<DamageLevel, { label: string; color: string; bgColor: string }> = {
+  minor: { label: '轻微', color: 'text-green-600', bgColor: 'bg-green-100' },
+  moderate: { label: '一般', color: 'text-amber-600', bgColor: 'bg-amber-100' },
+  severe: { label: '严重', color: 'text-red-600', bgColor: 'bg-red-100' },
+  scrapped: { label: '报废', color: 'text-gray-600', bgColor: 'bg-gray-100' },
+};
 
 export default function DamagePage() {
   const {
@@ -21,6 +30,7 @@ export default function DamagePage() {
   const [levelFilter, setLevelFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPartModalOpen, setIsPartModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [selectedDamageId, setSelectedDamageId] = useState('');
   const [formData, setFormData] = useState({
     equipmentId: '',
@@ -34,6 +44,21 @@ export default function DamagePage() {
     quantity: '',
     unitPrice: '',
   });
+  const [statusWarning, setStatusWarning] = useState('');
+  const [damageTipType, setDamageTipType] = useState<'none' | 'photo' | 'confirm'>('none');
+
+  const selectedEquipment = useMemo(() => {
+    if (!formData.equipmentId) return null;
+    return equipments.find((e) => e.id === formData.equipmentId) || null;
+  }, [formData.equipmentId, equipments]);
+
+  const availableEquipments = useMemo(() => {
+    return equipments.filter((eq) => !DAMAGE_UNAVAILABLE_STATUSES.includes(eq.status));
+  }, [equipments]);
+
+  const unavailableEquipments = useMemo(() => {
+    return equipments.filter((eq) => DAMAGE_UNAVAILABLE_STATUSES.includes(eq.status));
+  }, [equipments]);
 
   const filteredDamageRecords = useMemo(() => {
     return damageRecords
@@ -60,13 +85,57 @@ export default function DamagePage() {
       description: '',
       reporter: '',
     });
+    setStatusWarning('');
+    setDamageTipType('none');
     setIsModalOpen(true);
+  };
+
+  const handleEquipmentChange = (equipmentId: string) => {
+    const equipment = equipments.find((e) => e.id === equipmentId);
+    
+    if (!equipment) {
+      setFormData({ ...formData, equipmentId: '' });
+      setStatusWarning('');
+      return;
+    }
+
+    if (DAMAGE_UNAVAILABLE_STATUSES.includes(equipment.status)) {
+      setStatusWarning(`该设备当前状态为「${equipment.status === 'scrapped' ? '已报废' : '已停用'}」，无法登记损耗`);
+      setFormData({ ...formData, equipmentId: '' });
+      return;
+    }
+
+    setStatusWarning('');
+    setFormData({ ...formData, equipmentId });
+  };
+
+  const handleLevelChange = (level: DamageLevel) => {
+    setFormData({ ...formData, level });
+    
+    if (level === 'severe' || level === 'scrapped') {
+      setDamageTipType('confirm');
+    } else if (level === 'minor' || level === 'moderate') {
+      setDamageTipType('photo');
+    } else {
+      setDamageTipType('none');
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (formData.level === 'severe' || formData.level === 'scrapped') {
+      setIsConfirmModalOpen(true);
+    } else {
+      submitDamageRecord();
+    }
+  };
+
+  const submitDamageRecord = () => {
     addDamageRecord(formData);
     setIsModalOpen(false);
+    setIsConfirmModalOpen(false);
+    setDamageTipType('none');
   };
 
   const handleAddPart = (damageId: string, equipmentId: string) => {
@@ -105,12 +174,76 @@ export default function DamagePage() {
     const minor = damageRecords.filter((d) => d.level === 'minor').length;
     const moderate = damageRecords.filter((d) => d.level === 'moderate').length;
     const severe = damageRecords.filter((d) => d.level === 'severe').length;
+    const scrapped = damageRecords.filter((d) => d.level === 'scrapped').length;
     const totalPartsCost = partReplacements.reduce(
       (sum, p) => sum + p.quantity * p.unitPrice,
       0
     );
-    return { total, minor, moderate, severe, totalPartsCost };
+    return { total, minor, moderate, severe, scrapped, totalPartsCost };
   }, [damageRecords, partReplacements]);
+
+  const renderEquipmentInfoCard = () => {
+    if (!selectedEquipment) return null;
+
+    return (
+      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-3">
+        <div className="flex items-center gap-2 mb-2">
+          <CheckCircle className="w-5 h-5 text-emerald-600" />
+          <span className="font-medium text-emerald-800">设备信息已自动回填</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="flex items-center gap-2">
+            <Tag className="w-4 h-4 text-emerald-500" />
+            <span className="text-gray-500">设备编号：</span>
+            <span className="text-gray-900 font-medium">{selectedEquipment.equipmentNo}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-emerald-500" />
+            <span className="text-gray-500">设备型号：</span>
+            <span className="text-gray-900 font-medium">{selectedEquipment.brand} {selectedEquipment.model}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-emerald-500" />
+            <span className="text-gray-500">所属部门：</span>
+            <span className="text-gray-900 font-medium">{selectedEquipment.department}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <UserIcon className="w-4 h-4 text-emerald-500" />
+            <span className="text-gray-500">使用人：</span>
+            <span className="text-gray-900 font-medium">{selectedEquipment.custodian}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDamageTip = () => {
+    if (damageTipType === 'photo') {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+          <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800">
+            <p className="font-medium">温馨提示</p>
+            <p className="mt-0.5">建议上传现场照片辅助记录，便于后续维修参考</p>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const renderStatusWarning = () => {
+    if (!statusWarning) return null;
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+        <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+        <div className="text-sm text-red-800">
+          <p className="font-medium">无法选择</p>
+          <p className="mt-0.5">{statusWarning}</p>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -124,7 +257,7 @@ export default function DamagePage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">累计损耗</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total} 次</p>
@@ -134,12 +267,16 @@ export default function DamagePage() {
           <p className="text-2xl font-bold text-green-600 mt-1">{stats.minor} 次</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500">中等损耗</p>
+          <p className="text-sm text-gray-500">一般损耗</p>
           <p className="text-2xl font-bold text-amber-600 mt-1">{stats.moderate} 次</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">严重损耗</p>
           <p className="text-2xl font-bold text-red-600 mt-1">{stats.severe} 次</p>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500">报废处理</p>
+          <p className="text-2xl font-bold text-gray-600 mt-1">{stats.scrapped} 次</p>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <p className="text-sm text-gray-500">配件费用</p>
@@ -169,8 +306,9 @@ export default function DamagePage() {
             >
               <option value="">全部程度</option>
               <option value="minor">轻微</option>
-              <option value="moderate">中等</option>
+              <option value="moderate">一般</option>
               <option value="severe">严重</option>
+              <option value="scrapped">报废</option>
             </select>
           </div>
         </div>
@@ -182,28 +320,17 @@ export default function DamagePage() {
               (sum, p) => sum + p.quantity * p.unitPrice,
               0
             );
+            const levelInfo = damageLevelInfo[record.level];
 
             return (
               <div key={record.id} className="p-4 hover:bg-gray-50 transition-colors">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
                     <div
-                      className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        record.level === 'severe'
-                          ? 'bg-red-100'
-                          : record.level === 'moderate'
-                          ? 'bg-amber-100'
-                          : 'bg-green-100'
-                      }`}
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center ${levelInfo.bgColor}`}
                     >
                       <AlertTriangle
-                        className={`w-6 h-6 ${
-                          record.level === 'severe'
-                            ? 'text-red-600'
-                            : record.level === 'moderate'
-                            ? 'text-amber-600'
-                            : 'text-green-600'
-                        }`}
+                        className={`w-6 h-6 ${levelInfo.color}`}
                       />
                     </div>
                     <div>
@@ -316,27 +443,44 @@ export default function DamagePage() {
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                选择装备 <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.equipmentId}
-                onChange={(e) =>
-                  setFormData({ ...formData, equipmentId: e.target.value })
-                }
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              >
-                <option value="">请选择装备</option>
-                {equipments.map((eq) => (
-                  <option key={eq.id} value={eq.id}>
-                    {eq.name} ({eq.brand} {eq.model})
+          <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            选择设备 <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={formData.equipmentId}
+            onChange={(e) => handleEquipmentChange(e.target.value)}
+            required
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            <option value="">请选择设备</option>
+            <optgroup label="可登记损耗的设备">
+              {availableEquipments.map((eq) => (
+                <option key={eq.id} value={eq.id}>
+                  {eq.name} ({eq.brand} {eq.model})
+                </option>
+              ))}
+            </optgroup>
+            {unavailableEquipments.length > 0 && (
+              <optgroup label="不可登记（已报废/停用）">
+                {unavailableEquipments.map((eq) => (
+                  <option key={eq.id} value={eq.id} disabled>
+                    {eq.name} - {eq.status === 'scrapped' ? '已报废' : '已停用'}
                   </option>
                 ))}
-              </select>
-            </div>
+              </optgroup>
+            )}
+          </select>
+          <p className="mt-1 text-xs text-gray-500">
+            提示：仅「在库、租出、维护中、损坏待修状态的设备可登记损耗
+          </p>
+        </div>
+
+        {statusWarning && renderStatusWarning()}
+
+        {selectedEquipment && renderEquipmentInfoCard()}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 登记日期 <span className="text-red-500">*</span>
@@ -356,34 +500,35 @@ export default function DamagePage() {
               <select
                 value={formData.level}
                 onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    level: e.target.value as DamageLevel,
-                  })
+                  handleLevelChange(e.target.value as DamageLevel)
                 }
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
               >
                 <option value="minor">轻微</option>
-                <option value="moderate">中等</option>
+                <option value="moderate">一般</option>
                 <option value="severe">严重</option>
+                <option value="scrapped">报废</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                登记人 <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.reporter}
-                onChange={(e) =>
-                  setFormData({ ...formData, reporter: e.target.value })
-                }
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                placeholder="请输入登记人姓名"
-              />
-            </div>
+          </div>
+
+          {damageTipType !== 'none' && renderDamageTip()}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              登记人 <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.reporter}
+              onChange={(e) =>
+                setFormData({ ...formData, reporter: e.target.value })
+              }
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              placeholder="请输入登记人姓名"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -411,6 +556,48 @@ export default function DamagePage() {
             <Button type="submit">确认登记</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={isConfirmModalOpen}
+        onClose={() => setIsConfirmModalOpen(false)}
+        title="确认提交确认"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
+            <div>
+              <h4 className="font-semibold text-red-800">重要提示</h4>
+              <p className="text-sm text-red-700 mt-1">
+                该损耗程度为「{damageLevelInfo[formData.level].label}」将触发设备维修/报废流程，请确认是否继续提交？
+              </p>
+            </div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-4 text-sm">
+            <p className="text-gray-600">
+              <span className="font-medium text-gray-700">设备名称：</span>
+              {selectedEquipment?.name || '未知'}
+            </p>
+            <p className="text-gray-600 mt-2">
+              <span className="font-medium text-gray-700">损耗程度：</span>
+              {damageLevelInfo[formData.level].label}
+            </p>
+            <p className="text-gray-600 mt-2">
+              <span className="font-medium text-gray-700">登记人：</span>
+              {formData.reporter || '未填写'}
+            </p>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setIsConfirmModalOpen(false)}
+            >
+              返回修改
+            </Button>
+            <Button onClick={submitDamageRecord}>确认提交</Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal

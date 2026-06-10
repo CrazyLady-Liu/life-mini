@@ -12,6 +12,7 @@ const statusStyles: Record<string, Record<string, string>> = {
     maintenance: 'bg-amber-100 text-amber-700',
     damaged: 'bg-red-100 text-red-700',
     scrapped: 'bg-gray-100 text-gray-700',
+    decommissioned: 'bg-orange-100 text-orange-700',
   },
   rental: {
     pending: 'bg-amber-100 text-amber-700',
@@ -45,6 +46,7 @@ const statusLabels: Record<string, Record<string, string>> = {
     maintenance: '维护中',
     damaged: '损坏待修',
     scrapped: '已报废',
+    decommissioned: '已停用',
   },
   rental: {
     pending: '待取货',
@@ -55,8 +57,9 @@ const statusLabels: Record<string, Record<string, string>> = {
   },
   damage: {
     minor: '轻微',
-    moderate: '中等',
+    moderate: '一般',
     severe: '严重',
+    scrapped: '报废',
   },
   maintenance: {
     pending: '待处理',
@@ -85,9 +88,10 @@ export default function StatusBadge({ status, variant = 'equipment' }: StatusBad
       <span className={cn('w-1.5 h-1.5 rounded-full mr-1.5', {
         'bg-green-500': status === 'available' || status === 'active' || status === 'returned' || status === 'completed' || status === 'minor',
         'bg-amber-500': status === 'pending' || status === 'maintenance' || status === 'moderate' || status === 'in_progress',
-        'bg-red-500': status === 'damaged' || status === 'overdue' || status === 'severe',
+        'bg-red-500': status === 'damaged' || status === 'overdue' || status === 'severe' || status === 'scrapped',
         'bg-blue-500': status === 'rented',
-        'bg-gray-500': status === 'scrapped' || status === 'cancelled',
+        'bg-orange-500': status === 'decommissioned',
+        'bg-gray-500': status === 'cancelled',
       })}></span>
       {label}
     </span>

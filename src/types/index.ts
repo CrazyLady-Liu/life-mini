@@ -1,8 +1,8 @@
-export type EquipmentStatus = 'available' | 'rented' | 'maintenance' | 'damaged' | 'scrapped';
+export type EquipmentStatus = 'available' | 'rented' | 'maintenance' | 'damaged' | 'scrapped' | 'decommissioned';
 
 export type RentalStatus = 'pending' | 'active' | 'returned' | 'overdue' | 'cancelled';
 
-export type DamageLevel = 'minor' | 'moderate' | 'severe';
+export type DamageLevel = 'minor' | 'moderate' | 'severe' | 'scrapped';
 
 export type MaintenanceStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
@@ -40,6 +40,7 @@ export type EquipmentValueLevel = 'normal' | 'high';
 
 export interface Equipment {
   id: string;
+  equipmentNo: string;
   name: string;
   category: string;
   brand: string;
@@ -48,6 +49,8 @@ export interface Equipment {
   purchaseDate: string;
   status: EquipmentStatus;
   location: string;
+  department: string;
+  custodian: string;
   usageCount: number;
   supplierId: string;
   notes?: string;
@@ -188,6 +191,7 @@ export interface EquipmentHealth {
     severeDamageCount: number;
     moderateDamageCount: number;
     minorDamageCount: number;
+    scrappedDamageCount: number;
   };
 }
 

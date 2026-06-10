@@ -18,6 +18,7 @@ const DAMAGE_SCORE_PENALTY = {
   minor: 5,
   moderate: 15,
   severe: 30,
+  scrapped: 100,
 };
 
 const MAINTENANCE_COST_RATIO_THRESHOLD = 0.5;
@@ -41,6 +42,7 @@ export const calculateEquipmentHealth = (
   const minorDamageCount = equipmentDamages.filter((d) => d.level === 'minor').length;
   const moderateDamageCount = equipmentDamages.filter((d) => d.level === 'moderate').length;
   const severeDamageCount = equipmentDamages.filter((d) => d.level === 'severe').length;
+  const scrappedDamageCount = equipmentDamages.filter((d) => d.level === 'scrapped').length;
   const totalDamageCount = equipmentDamages.length;
 
   const totalMaintenanceCount = equipmentMaintenances.filter((m) => m.status === 'completed').length;
@@ -54,6 +56,7 @@ export const calculateEquipmentHealth = (
   damagePenalty += minorDamageCount * DAMAGE_SCORE_PENALTY.minor;
   damagePenalty += moderateDamageCount * DAMAGE_SCORE_PENALTY.moderate;
   damagePenalty += severeDamageCount * DAMAGE_SCORE_PENALTY.severe;
+  damagePenalty += scrappedDamageCount * DAMAGE_SCORE_PENALTY.scrapped;
   const damageScore = Math.max(0, 100 - damagePenalty);
 
   let maintenancePenalty = 0;
@@ -92,7 +95,7 @@ export const calculateEquipmentHealth = (
   const estimatedScrapDate = new Date(now.getTime() + remainingLifespanDays * 24 * 60 * 60 * 1000);
   const estimatedScrapDateStr = estimatedScrapDate.toISOString().split('T')[0];
 
-  if (equipment.status === 'scrapped') {
+  if (equipment.status === 'scrapped' || equipment.status === 'decommissioned') {
     return {
       equipmentId: equipment.id,
       healthScore: 0,
@@ -116,6 +119,7 @@ export const calculateEquipmentHealth = (
         severeDamageCount,
         moderateDamageCount,
         minorDamageCount,
+        scrappedDamageCount,
       },
     };
   }
@@ -143,6 +147,7 @@ export const calculateEquipmentHealth = (
       severeDamageCount,
       moderateDamageCount,
       minorDamageCount,
+      scrappedDamageCount,
     },
   };
 };

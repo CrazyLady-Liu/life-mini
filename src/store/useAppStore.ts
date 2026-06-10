@@ -78,7 +78,7 @@ interface AppState {
   customerCoupons: CustomerCoupon[];
   financeVouchers: FinanceVoucher[];
   
-  addEquipment: (equipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'usageCount'>) => void;
+  addEquipment: (equipment: Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'usageCount' | 'equipmentNo'> & { equipmentNo?: string }>) => void;
   updateEquipment: (id: string, equipment: Partial<Equipment>) => void;
   deleteEquipment: (id: string) => void;
   
@@ -169,8 +169,11 @@ export const useAppStore = create<AppState>()(
       
       addEquipment: (equipment) => {
         const now = new Date().toISOString();
+        const year = new Date().getFullYear();
+        const equipmentNo = equipment.equipmentNo || `EQ-${year}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
         const newEquipment: Equipment = {
           ...equipment,
+          equipmentNo,
           id: generateId(),
           usageCount: 0,
           createdAt: now,
@@ -618,6 +621,8 @@ export const useAppStore = create<AppState>()(
           let newStatus: EquipmentStatus = 'damaged';
           if (record.level === 'minor') {
             newStatus = 'available';
+          } else if (record.level === 'scrapped') {
+            newStatus = 'scrapped';
           }
           
           const equipment = state.equipments.find((eq) => eq.id === record.equipmentId);

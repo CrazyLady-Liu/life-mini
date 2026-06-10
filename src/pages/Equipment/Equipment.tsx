@@ -28,6 +28,8 @@ export default function EquipmentPage() {
     purchaseDate: '',
     status: 'available' as Equipment['status'],
     location: '',
+    department: '',
+    custodian: '',
     supplierId: '',
     notes: '',
   });
@@ -86,6 +88,8 @@ export default function EquipmentPage() {
       purchaseDate: new Date().toISOString().split('T')[0],
       status: 'available',
       location: '',
+      department: '',
+      custodian: '',
       supplierId: '',
       notes: '',
     });
@@ -103,6 +107,8 @@ export default function EquipmentPage() {
       purchaseDate: equipment.purchaseDate,
       status: equipment.status,
       location: equipment.location,
+      department: equipment.department,
+      custodian: equipment.custodian,
       supplierId: equipment.supplierId,
       notes: equipment.notes || '',
     });
@@ -193,6 +199,7 @@ export default function EquipmentPage() {
                 <option value="maintenance">维护中</option>
                 <option value="damaged">损坏待修</option>
                 <option value="scrapped">已报废</option>
+                <option value="decommissioned">已停用</option>
               </select>
               <select
                 value={healthFilter}
@@ -471,6 +478,26 @@ export default function EquipmentPage() {
                 placeholder="如：A区-01货架"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">所属部门</label>
+              <input
+                type="text"
+                value={formData.department}
+                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                placeholder="请输入所属部门"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">使用人</label>
+              <input
+                type="text"
+                value={formData.custodian}
+                onChange={(e) => setFormData({ ...formData, custodian: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                placeholder="请输入使用人姓名"
+              />
+            </div>
             {editingEquipment && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
@@ -489,6 +516,7 @@ export default function EquipmentPage() {
                   <option value="maintenance">维护中</option>
                   <option value="damaged">损坏待修</option>
                   <option value="scrapped">已报废</option>
+                  <option value="decommissioned">已停用</option>
                 </select>
               </div>
             )}
