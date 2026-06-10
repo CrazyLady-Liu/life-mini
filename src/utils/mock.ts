@@ -407,6 +407,7 @@ export const mockDamageRecords: DamageRecord[] = [
     description: '灯珠部分不亮，疑似电池接触不良',
     reporter: '张管理员',
     status: 'reported',
+    photoUrls: [],
     createdAt: pastDate(2),
   },
   {
@@ -417,6 +418,7 @@ export const mockDamageRecords: DamageRecord[] = [
     description: '肩带缝线轻微开线',
     reporter: '李操作员',
     status: 'repaired',
+    photoUrls: [],
     createdAt: pastDate(8),
   },
   {
@@ -427,6 +429,7 @@ export const mockDamageRecords: DamageRecord[] = [
     description: '表面有轻微划痕',
     reporter: '张管理员',
     status: 'repaired',
+    photoUrls: [],
     createdAt: pastDate(15),
   },
 ];

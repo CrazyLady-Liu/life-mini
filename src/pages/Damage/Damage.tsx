@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User, Info, CheckCircle, XCircle, Tag, Building2, UserCheck } from 'lucide-react';
+import { useState, useMemo, useRef } from 'react';
+import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User, Info, CheckCircle, XCircle, Tag, Building2, UserCheck, Camera, X, Image as ImageIcon } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
@@ -38,7 +38,9 @@ export default function DamagePage() {
     level: 'minor' as DamageLevel,
     description: '',
     reporter: '',
+    photoUrls: [] as string[],
   });
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [partFormData, setPartFormData] = useState({
     partName: '',
     quantity: '',
@@ -84,10 +86,40 @@ export default function DamagePage() {
       level: 'minor',
       description: '',
       reporter: '',
+      photoUrls: [],
     });
     setStatusWarning('');
     setDamageTipType('none');
     setIsModalOpen(true);
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setFormData((prev) => ({
+            ...prev,
+            photoUrls: [...prev.photoUrls, event.target!.result as string],
+          }));
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      photoUrls: prev.photoUrls.filter((_, i) => i !== index),
+    }));
   };
 
   const handleEquipmentChange = (equipmentId: string) => {
@@ -220,11 +252,58 @@ export default function DamagePage() {
   const renderDamageTip = () => {
     if (damageTipType === 'photo') {
       return (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
-          <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-800">
-            <p className="font-medium">温馨提示</p>
-            <p className="mt-0.5">建议上传现场照片辅助记录，便于后续维修参考</p>
+        <div className="space-y-3">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+            <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-800 flex-1">
+              <p className="font-medium">温馨提示</p>
+              <p className="mt-0.5">建议上传现场照片辅助记录，便于后续维修参考</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              现场照片 <span className="text-gray-400 font-normal">（可选）</span>
+            </label>
+            
+            {formData.photoUrls.length > 0 && (
+              <div className="grid grid-cols-4 gap-2 mb-3">
+                {formData.photoUrls.map((url, index) => (
+                  <div key={index} className="relative group aspect-square">
+                    <img
+                      src={url}
+                      alt={`现场照片 ${index + 1}`}
+                      className="w-full h-full object-cover rounded-lg border border-gray-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(index)}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handlePhotoUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-1 text-gray-500 hover:border-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+            >
+              <Camera className="w-5 h-5" />
+              <span className="text-sm">点击上传现场照片</span>
+              <span className="text-xs text-gray-400">支持 JPG、PNG 格式，可多选</span>
+            </button>
           </div>
         </div>
       );
@@ -348,6 +427,12 @@ export default function DamagePage() {
                           <User className="w-3.5 h-3.5" />
                           {record.reporter}
                         </span>
+                        {record.photoUrls && record.photoUrls.length > 0 && (
+                          <span className="flex items-center gap-1 text-emerald-600">
+                            <ImageIcon className="w-3.5 h-3.5" />
+                            {record.photoUrls.length} 张照片
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -451,20 +536,26 @@ export default function DamagePage() {
             value={formData.equipmentId}
             onChange={(e) => handleEquipmentChange(e.target.value)}
             required
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent disabled:bg-gray-50 disabled:cursor-not-allowed"
           >
             <option value="">请选择设备</option>
-            <optgroup label="可登记损耗的设备">
+            <optgroup label="✅ 可登记损耗的设备">
               {availableEquipments.map((eq) => (
-                <option key={eq.id} value={eq.id}>
+                <option key={eq.id} value={eq.id} title={`${eq.name} - ${eq.brand} ${eq.model}（状态：正常）`}>
                   {eq.name} ({eq.brand} {eq.model})
                 </option>
               ))}
             </optgroup>
             {unavailableEquipments.length > 0 && (
-              <optgroup label="不可登记（已报废/停用）">
+              <optgroup label="🚫 不可登记（已报废/停用）">
                 {unavailableEquipments.map((eq) => (
-                  <option key={eq.id} value={eq.id} disabled>
+                  <option
+                    key={eq.id}
+                    value={eq.id}
+                    disabled
+                    title={`该设备已${eq.status === 'scrapped' ? '报废' : '停用'}，无法登记损耗`}
+                    className="text-gray-400 bg-gray-100"
+                  >
                     {eq.name} - {eq.status === 'scrapped' ? '已报废' : '已停用'}
                   </option>
                 ))}
@@ -472,7 +563,7 @@ export default function DamagePage() {
             )}
           </select>
           <p className="mt-1 text-xs text-gray-500">
-            提示：仅「在库、租出、维护中、损坏待修状态的设备可登记损耗
+            提示：仅「在库、租出、维护中、损坏待修」状态的设备可登记损耗
           </p>
         </div>
 
@@ -587,6 +678,12 @@ export default function DamagePage() {
               <span className="font-medium text-gray-700">登记人：</span>
               {formData.reporter || '未填写'}
             </p>
+            {formData.photoUrls.length > 0 && (
+              <p className="text-gray-600 mt-2">
+                <span className="font-medium text-gray-700">现场照片：</span>
+                <span className="text-emerald-600">{formData.photoUrls.length} 张</span>
+              </p>
+            )}
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button

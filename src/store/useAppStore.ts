@@ -30,6 +30,7 @@ import type {
   FinanceVoucher,
   VoucherStatus,
   AddEquipmentInput,
+  AddDamageRecordInput,
 } from '../types';
 import {
   mockEquipments,
@@ -95,7 +96,7 @@ interface AppState {
   updateRental: (id: string, rental: Partial<Rental>) => void;
   returnRental: (id: string, options?: { penaltyAmount?: number; damageCompensation?: number; adjustmentReason?: string; operator?: string; packageDiscount?: number; couponDiscount?: number; deliveryFee?: number; couponId?: string }) => void;
   
-  addDamageRecord: (record: Omit<DamageRecord, 'id' | 'createdAt' | 'status'>) => void;
+  addDamageRecord: (record: AddDamageRecordInput) => void;
   updateDamageRecord: (id: string, record: Partial<DamageRecord>) => void;
   
   addPartReplacement: (part: Omit<PartReplacement, 'id' | 'createdAt'>) => void;
@@ -615,6 +616,7 @@ export const useAppStore = create<AppState>()(
           ...record,
           id: generateId(),
           status: 'reported',
+          photoUrls: record.photoUrls || [],
           createdAt: now,
         };
         

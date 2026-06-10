@@ -60,6 +60,8 @@ export interface Equipment {
 
 export type AddEquipmentInput = Omit<Equipment, 'id' | 'createdAt' | 'updatedAt' | 'usageCount' | 'equipmentNo'> & { equipmentNo?: string };
 
+export type AddDamageRecordInput = Omit<DamageRecord, 'id' | 'createdAt' | 'status'> & { photoUrls?: string[] };
+
 export interface Customer {
   id: string;
   name: string;
@@ -99,6 +101,7 @@ export interface DamageRecord {
   description: string;
   reporter: string;
   status: 'reported' | 'repaired' | 'scrapped';
+  photoUrls: string[];
   createdAt: string;
 }
 
