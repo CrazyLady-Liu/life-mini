@@ -4,6 +4,8 @@ import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
+import Toast, { type ToastType } from '@/components/Toast';
+import GroupedSelect, { type GroupedSelectGroup, type GroupedSelectOption } from '@/components/GroupedSelect';
 import { formatCurrency, formatDate } from '@/utils/format';
 import type { DamageLevel, Equipment } from '@/types';
 
@@ -48,6 +50,24 @@ export default function DamagePage() {
   });
   const [statusWarning, setStatusWarning] = useState('');
   const [damageTipType, setDamageTipType] = useState<'none' | 'photo' | 'confirm'>('none');
+  const [toast, setToast] = useState<{ isOpen: boolean; message: string; type: ToastType }>({
+    isOpen: false,
+    message: '',
+    type: 'warning',
+  });
+
+  const showToast = (message: string, type: ToastType = 'warning') => {
+    setToast({ isOpen: true, message, type });
+  };
+
+  const closeToast = () => {
+    setToast((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const handleDisabledEquipmentClick = (option: GroupedSelectOption) => {
+    const reason = option.disabledReason || '该设备无法登记损耗';
+    showToast(reason, 'warning');
+  };
 
   const selectedEquipment = useMemo(() => {
     if (!formData.equipmentId) return null;
@@ -61,6 +81,29 @@ export default function DamagePage() {
   const unavailableEquipments = useMemo(() => {
     return equipments.filter((eq) => DAMAGE_UNAVAILABLE_STATUSES.includes(eq.status));
   }, [equipments]);
+
+  const equipmentSelectGroups = useMemo<GroupedSelectGroup[]>(() => {
+    return [
+      {
+        label: '可登记损耗的设备',
+        icon: '✅',
+        options: availableEquipments.map((eq) => ({
+          value: eq.id,
+          label: `${eq.name} (${eq.brand} ${eq.model})`,
+        })),
+      },
+      {
+        label: '不可登记（已报废/停用）',
+        icon: '🚫',
+        options: unavailableEquipments.map((eq) => ({
+          value: eq.id,
+          label: `${eq.name} - ${eq.status === 'scrapped' ? '已报废' : '已停用'}`,
+          disabled: true,
+          disabledReason: `该设备已${eq.status === 'scrapped' ? '报废' : '停用'}，无法登记损耗`,
+        })),
+      },
+    ];
+  }, [availableEquipments, unavailableEquipments]);
 
   const filteredDamageRecords = useMemo(() => {
     return damageRecords
@@ -325,7 +368,15 @@ export default function DamagePage() {
   };
 
   return (
-    <div className="space-y-6">
+    <>
+      <Toast
+        isOpen={toast.isOpen}
+        message={toast.message}
+        type={toast.type}
+        onClose={closeToast}
+        duration={2000}
+      />
+      <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">损耗登记</h2>
@@ -529,47 +580,25 @@ export default function DamagePage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            选择设备 <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={formData.equipmentId}
-            onChange={(e) => handleEquipmentChange(e.target.value)}
-            required
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent disabled:bg-gray-50 disabled:cursor-not-allowed"
-          >
-            <option value="">请选择设备</option>
-            <optgroup label="✅ 可登记损耗的设备">
-              {availableEquipments.map((eq) => (
-                <option key={eq.id} value={eq.id} title={`${eq.name} - ${eq.brand} ${eq.model}（状态：正常）`}>
-                  {eq.name} ({eq.brand} {eq.model})
-                </option>
-              ))}
-            </optgroup>
-            {unavailableEquipments.length > 0 && (
-              <optgroup label="🚫 不可登记（已报废/停用）">
-                {unavailableEquipments.map((eq) => (
-                  <option
-                    key={eq.id}
-                    value={eq.id}
-                    disabled
-                    title={`该设备已${eq.status === 'scrapped' ? '报废' : '停用'}，无法登记损耗`}
-                    className="text-gray-400 bg-gray-100"
-                  >
-                    {eq.name} - {eq.status === 'scrapped' ? '已报废' : '已停用'}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-          <p className="mt-1 text-xs text-gray-500">
-            提示：仅「在库、租出、维护中、损坏待修」状态的设备可登记损耗
-          </p>
-        </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              选择设备 <span className="text-red-500">*</span>
+            </label>
+            <GroupedSelect
+              groups={equipmentSelectGroups}
+              value={formData.equipmentId}
+              onChange={handleEquipmentChange}
+              onDisabledClick={handleDisabledEquipmentClick}
+              placeholder="请选择设备"
+              required
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              提示：仅「在库、租出、维护中、损坏待修」状态的设备可登记损耗，点击已报废/停用设备查看提示
+            </p>
+          </div>
 
-        {statusWarning && renderStatusWarning()}
+          {statusWarning && renderStatusWarning()}
 
-        {selectedEquipment && renderEquipmentInfoCard()}
+          {selectedEquipment && renderEquipmentInfoCard()}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -765,5 +794,6 @@ export default function DamagePage() {
         </form>
       </Modal>
     </div>
+    </>
   );
 }
