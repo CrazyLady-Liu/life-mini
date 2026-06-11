@@ -302,43 +302,70 @@ export const getDirectionByType = (type: TransactionType): 'income' | 'expense' 
 
 export const generateRentalIncomeFlows = (
   rental: Rental,
-  operator: string = '系统'
+  operator: string = '系统',
+  options?: {
+    channel?: CustomerChannel;
+    isPackage?: boolean;
+    packageId?: string;
+    baseRentalFee?: number;
+    packageSplitItems?: Array<{ equipmentId: string; equipmentName: string; amount: number }>;
+    sceneType?: 'new' | 'renewal' | 'settlement' | 'package_split';
+  }
 ): FundFlowRecord[] => {
   const flows: FundFlowRecord[] = [];
-  const channelLabel = rental.channel === 'individual' ? '散客' : rental.channel === 'group' ? '团建' : '线上渠道';
+  const channel = options?.channel || rental.channel || 'individual';
+  const isPackage = options?.isPackage ?? rental.isPackage ?? false;
+  const channelLabel = channel === 'individual' ? '散客' : channel === 'group' ? '团建' : '线上渠道';
+  const sceneType = options?.sceneType || (rental.originalRentalId ? 'renewal' : 'new');
   
-  if (rental.isPackage) {
-    flows.push(createFundFlowRecord({
-      rentalId: rental.id,
-      customerId: rental.customerId,
-      type: 'rental_fee',
-      amount: rental.price,
-      direction: 'income',
-      operator,
-      changeReason: `${channelLabel}套餐租赁收入 - 订单结算`,
-      channel: rental.channel,
-    }));
-  } else if (rental.originalRentalId) {
-    flows.push(createFundFlowRecord({
-      rentalId: rental.id,
-      customerId: rental.customerId,
-      type: 'rental_renewal_fee',
-      amount: rental.price,
-      direction: 'income',
-      operator,
-      changeReason: `${channelLabel}续租收入 - 租期延长`,
-      channel: rental.channel,
-    }));
+  const getSceneDescription = (): string => {
+    switch (sceneType) {
+      case 'renewal':
+        return `${channelLabel}续租收入 - 租期延长`;
+      case 'settlement':
+        return isPackage 
+          ? `${channelLabel}套餐租赁收入 - 订单结算` 
+          : `${channelLabel}租赁收入 - 订单结算`;
+      case 'package_split':
+        return `${channelLabel}套餐租赁拆分 - 单品收入`;
+      case 'new':
+      default:
+        return isPackage 
+          ? `${channelLabel}套餐租赁收入 - 创建订单` 
+          : `${channelLabel}租赁收入 - 创建订单`;
+    }
+  };
+  
+  const getTransactionType = (): TransactionType => {
+    return sceneType === 'renewal' ? 'rental_renewal_fee' : 'rental_fee';
+  };
+  
+  if (options?.packageSplitItems && options.packageSplitItems.length > 0) {
+    options.packageSplitItems.forEach((item, index) => {
+      flows.push(createFundFlowRecord({
+        rentalId: rental.id,
+        customerId: rental.customerId,
+        type: 'rental_fee',
+        amount: item.amount,
+        direction: 'income',
+        operator,
+        changeReason: `${channelLabel}套餐租赁拆分 - ${item.equipmentName}（第${index + 1}项）`,
+        channel,
+        remark: `套餐ID: ${options?.packageId || rental.packageId || 'N/A'}`,
+      }));
+    });
   } else {
+    const amount = options?.baseRentalFee ?? rental.price;
     flows.push(createFundFlowRecord({
       rentalId: rental.id,
       customerId: rental.customerId,
-      type: 'rental_fee',
-      amount: rental.price,
+      type: getTransactionType(),
+      amount,
       direction: 'income',
       operator,
-      changeReason: `${channelLabel}租赁收入 - 订单结算`,
-      channel: rental.channel,
+      changeReason: getSceneDescription(),
+      channel,
+      remark: isPackage ? `套餐ID: ${options?.packageId || rental.packageId || 'N/A'}` : undefined,
     }));
   }
   
@@ -496,13 +523,25 @@ export const generateAllIncomeFlows = (
     damageCompensation?: { damageId: string; amount: number; isFullLoss: boolean };
     depositOffset?: { depositId: string; amount: number; offsetType: 'rental' | 'damage' | 'penalty' };
     valueAddedServices?: { deliveryFee?: number; cleaningFee?: number; packingFee?: number };
+    rentalIncomeOptions?: {
+      channel?: CustomerChannel;
+      isPackage?: boolean;
+      packageId?: string;
+      baseRentalFee?: number;
+      packageSplitItems?: Array<{ equipmentId: string; equipmentName: string; amount: number }>;
+      sceneType?: 'new' | 'renewal' | 'settlement' | 'package_split';
+    };
     operator?: string;
+    onSuccess?: (flows: FundFlowRecord[]) => void;
   } = {}
 ): FundFlowRecord[] => {
   const flows: FundFlowRecord[] = [];
-  const { penalty, damageCompensation, depositOffset, valueAddedServices, operator = '系统' } = options;
+  const { penalty, damageCompensation, depositOffset, valueAddedServices, rentalIncomeOptions, operator = '系统', onSuccess } = options;
   
-  flows.push(...generateRentalIncomeFlows(rental, operator));
+  flows.push(...generateRentalIncomeFlows(rental, operator, {
+    ...rentalIncomeOptions,
+    sceneType: rentalIncomeOptions?.sceneType || 'settlement',
+  }));
   
   if (penalty && penalty.adjustedAmount > 0) {
     flows.push(...generatePenaltyFlows(rental, penalty, operator));
@@ -532,6 +571,10 @@ export const generateAllIncomeFlows = (
   
   if (valueAddedServices) {
     flows.push(...generateValueAddedServiceFlows(rental, valueAddedServices, operator));
+  }
+  
+  if (onSuccess) {
+    onSuccess(flows);
   }
   
   return flows;

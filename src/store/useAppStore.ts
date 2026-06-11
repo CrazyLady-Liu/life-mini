@@ -50,7 +50,7 @@ import {
   mockRentalPenalties,
   mockDepositExemptCustomers,
 } from '../utils/mock';
-import { generateId } from '../utils/format';
+import { generateId, transactionTypeLabels, customerChannelLabels } from '../utils/format';
 import {
   calculateDepositAmount,
   isCustomerExemptFromDeposit,
@@ -119,6 +119,7 @@ interface AppState {
     couponId?: string;
   }) => void;
   renewRental: (originalRentalId: string, options: { endDate: string; price: number; operator?: string }) => void;
+  splitPackageRental: (packageRentalId: string, splitItems: Array<{ equipmentId: string; equipmentName: string; amount: number }>, operator?: string) => void;
   confirmDamageCompensation: (damageId: string, amount: number, operator?: string) => void;
   confirmEquipmentLoss: (damageId: string, amount: number, operator?: string) => void;
   offsetDeposit: (rentalId: string, amount: number, offsetType: 'rental' | 'damage' | 'penalty', operator?: string) => void;
@@ -346,7 +347,14 @@ export const useAppStore = create<AppState>()(
               depositOffset: 0,
             });
             
-            fundFlows.push(...generateRentalIncomeFlows(newRental, '系统'));
+            const rentalIncomeFlows = generateRentalIncomeFlows(newRental, '系统', {
+              channel: newRental.channel,
+              isPackage: newRental.isPackage,
+              packageId: newRental.packageId,
+              baseRentalFee: newRental.price,
+              sceneType: 'new',
+            });
+            fundFlows.push(...rentalIncomeFlows);
           }
           
           const newState: any = {
@@ -530,7 +538,20 @@ export const useAppStore = create<AppState>()(
               damageCompensation: damageId ? { damageId, amount: damageCompensation, isFullLoss } : undefined,
               depositOffset: depositOffset > 0 ? { depositId: depositRecord.id, amount: depositOffset, offsetType } : undefined,
               valueAddedServices: { deliveryFee, cleaningFee, packingFee },
+              rentalIncomeOptions: {
+                channel: rental.channel,
+                isPackage: rental.isPackage,
+                packageId: rental.packageId,
+                baseRentalFee: rental.price - packageDiscount - couponDiscount,
+                sceneType: 'settlement',
+              },
               operator,
+              onSuccess: (flows) => {
+                console.log(`[财务对账] 租赁订单 ${id} 结算成功，生成 ${flows.length} 条收入流水`);
+                flows.forEach((flow) => {
+                  console.log(`  - 流水号: ${flow.flowNo}, 类型: ${transactionTypeLabels[flow.type]}, 金额: ${flow.amount}, 渠道: ${flow.channel ? customerChannelLabels[flow.channel] : '未标记'}`);
+                });
+              },
             });
             newFundFlows.push(...allIncomeFlows);
             
@@ -630,6 +651,10 @@ export const useAppStore = create<AppState>()(
           }
           
           const newRentalId = generateId();
+          const channel = originalRental.channel;
+          const isPackage = originalRental.isPackage || false;
+          const packageId = originalRental.packageId;
+          
           const newRental: Rental = {
             ...originalRental,
             id: newRentalId,
@@ -637,6 +662,9 @@ export const useAppStore = create<AppState>()(
             endDate,
             price,
             status: 'active',
+            channel,
+            isPackage,
+            packageId,
             originalRentalId,
             createdAt: now,
           };
@@ -654,7 +682,14 @@ export const useAppStore = create<AppState>()(
           let newFundFlows: FundFlowRecord[] = [];
           let newFinanceDetail: RentalFinanceDetail | null = null;
           
-          newFundFlows.push(...generateRentalIncomeFlows(newRental, operator));
+          const rentalIncomeFlows = generateRentalIncomeFlows(newRental, operator, {
+            channel,
+            isPackage,
+            packageId,
+            baseRentalFee: price,
+            sceneType: 'renewal',
+          });
+          newFundFlows.push(...rentalIncomeFlows);
           
           newFinanceDetail = splitRentalFinance(newRental, {
             packageDiscount: 0,
@@ -675,6 +710,59 @@ export const useAppStore = create<AppState>()(
             rentalFinanceDetails: newFinanceDetail
               ? [...state.rentalFinanceDetails, newFinanceDetail]
               : state.rentalFinanceDetails,
+          };
+        });
+      },
+      
+      splitPackageRental: (packageRentalId, splitItems, operator = '系统') => {
+        const now = new Date().toISOString();
+        
+        set((state) => {
+          const packageRental = state.rentals.find((r) => r.id === packageRentalId);
+          if (!packageRental || !packageRental.isPackage) {
+            return state;
+          }
+          
+          const totalSplitAmount = splitItems.reduce((sum, item) => sum + item.amount, 0);
+          if (Math.abs(totalSplitAmount - packageRental.price) > 0.01) {
+            console.warn(`[财务对账] 套餐拆分金额 ${totalSplitAmount} 与套餐总价 ${packageRental.price} 不一致`);
+          }
+          
+          const packageSplitFlows = generateRentalIncomeFlows(packageRental, operator, {
+            channel: packageRental.channel,
+            isPackage: true,
+            packageId: packageRental.packageId,
+            baseRentalFee: packageRental.price,
+            packageSplitItems: splitItems,
+            sceneType: 'package_split',
+          });
+          
+          console.log(`[财务对账] 套餐租赁拆分成功，生成 ${packageSplitFlows.length} 条单品收入流水`);
+          packageSplitFlows.forEach((flow) => {
+            console.log(`  - 流水号: ${flow.flowNo}, 类型: ${transactionTypeLabels[flow.type]}, 金额: ${flow.amount}, 渠道: ${flow.channel ? customerChannelLabels[flow.channel] : '未标记'}`);
+          });
+          
+          const existingFinanceDetail = state.rentalFinanceDetails.find(
+            (d) => d.rentalId === packageRentalId
+          );
+          let updatedFinanceDetail = state.rentalFinanceDetails;
+          
+          if (existingFinanceDetail) {
+            updatedFinanceDetail = state.rentalFinanceDetails.map((d) =>
+              d.id === existingFinanceDetail.id
+                ? {
+                    ...d,
+                    baseRentalFee: packageRental.price,
+                    actualIncome: d.actualIncome,
+                    updatedAt: now,
+                  }
+                : d
+            );
+          }
+          
+          return {
+            fundFlowRecords: [...state.fundFlowRecords, ...packageSplitFlows],
+            rentalFinanceDetails: updatedFinanceDetail,
           };
         });
       },
