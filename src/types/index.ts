@@ -12,26 +12,38 @@ export type DepositStatus = 'pending' | 'collected' | 'refunded_full' | 'refunde
 
 export type DepositRuleType = 'category' | 'equipment' | 'package';
 
+export type CustomerChannel = 'individual' | 'group' | 'online';
+
 export type TransactionType = 
   | 'deposit_collect' 
   | 'deposit_refund' 
   | 'deposit_forfeit' 
+  | 'deposit_offset'
   | 'penalty' 
   | 'rental_fee' 
+  | 'rental_renewal_fee'
   | 'damage_compensation'
+  | 'loss_compensation'
   | 'package_discount'
   | 'coupon_discount'
   | 'delivery_fee'
+  | 'cleaning_fee'
+  | 'packing_fee'
   | 'refund_rental';
 
 export type FinanceCategory = 
   | 'rental_income'
   | 'deposit_income'
   | 'deposit_refund'
+  | 'deposit_offset_income'
   | 'penalty_income'
   | 'damage_compensation'
+  | 'loss_compensation'
   | 'discount'
   | 'delivery_fee'
+  | 'cleaning_fee'
+  | 'packing_fee'
+  | 'value_added_service'
   | 'other';
 
 export type VoucherStatus = 'pending' | 'issued' | 'cancelled';
@@ -89,6 +101,10 @@ export interface Rental {
   endDate: string;
   price: number;
   status: RentalStatus;
+  channel: CustomerChannel;
+  isPackage?: boolean;
+  packageId?: string;
+  originalRentalId?: string;
   notes?: string;
   createdAt: string;
 }
@@ -100,7 +116,12 @@ export interface DamageRecord {
   level: DamageLevel;
   description: string;
   reporter: string;
-  status: 'reported' | 'repaired' | 'scrapped';
+  status: 'reported' | 'repaired' | 'scrapped' | 'compensated' | 'lost';
+  compensationAmount?: number;
+  compensationConfirmed?: boolean;
+  compensationOperator?: string;
+  compensationDate?: string;
+  isFullLoss?: boolean;
   photoUrls: string[];
   createdAt: string;
 }
@@ -289,9 +310,13 @@ export interface RentalFinanceDetail {
   packageDiscount: number;
   couponDiscount: number;
   deliveryFee: number;
+  cleaningFee: number;
+  packingFee: number;
   penaltyAmount: number;
   damageCompensation: number;
+  lossCompensation: number;
   depositForfeited: number;
+  depositOffset: number;
   
   actualIncome: number;
   totalDiscount: number;
@@ -307,11 +332,13 @@ export interface FundFlowRecord {
   customerId: string;
   relatedDepositId?: string;
   relatedPenaltyId?: string;
+  relatedDamageId?: string;
   
   type: TransactionType;
   financeCategory: FinanceCategory;
   amount: number;
   direction: 'income' | 'expense';
+  channel?: CustomerChannel;
   
   operator: string;
   operateTime: string;

@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User, Info, CheckCircle, XCircle, Tag, Building2, UserCheck, Camera, X, Image as ImageIcon, ChevronRight } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Wrench, Package, Calendar, User, Info, CheckCircle, XCircle, Tag, Building2, UserCheck, Camera, X, Image as ImageIcon, ChevronRight, DollarSign, PackageX } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
@@ -24,9 +24,12 @@ export default function DamagePage() {
     damageRecords,
     equipments,
     partReplacements,
+    rentals,
     addDamageRecord,
     updateDamageRecord,
     addPartReplacement,
+    confirmDamageCompensation,
+    confirmEquipmentLoss,
   } = useAppStore();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,12 +60,75 @@ export default function DamagePage() {
     type: 'warning',
   });
 
+  const [isCompensationModalOpen, setIsCompensationModalOpen] = useState(false);
+  const [isLossModalOpen, setIsLossModalOpen] = useState(false);
+  const [selectedDamageForCompensation, setSelectedDamageForCompensation] = useState<DamageRecord | null>(null);
+  const [compensationFormData, setCompensationFormData] = useState({
+    amount: '',
+    operator: '管理员',
+  });
+
   const showToast = (message: string, type: ToastType = 'warning') => {
     setToast({ isOpen: true, message, type });
   };
 
   const closeToast = () => {
     setToast((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const handleConfirmCompensation = (record: DamageRecord) => {
+    if (record.compensationConfirmed) {
+      showToast('该损耗记录已确认赔付', 'warning');
+      return;
+    }
+    setSelectedDamageForCompensation(record);
+    const equipment = equipments.find((e) => e.id === record.equipmentId);
+    const suggestedAmount = equipment?.price ? equipment.price * 0.3 : 0;
+    setCompensationFormData({
+      amount: suggestedAmount.toFixed(2),
+      operator: '管理员',
+    });
+    setIsCompensationModalOpen(true);
+  };
+
+  const handleSubmitCompensation = () => {
+    if (!selectedDamageForCompensation) return;
+    const amount = Number(compensationFormData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      showToast('请输入有效的赔付金额', 'error');
+      return;
+    }
+    confirmDamageCompensation(selectedDamageForCompensation.id, amount, compensationFormData.operator);
+    setIsCompensationModalOpen(false);
+    setSelectedDamageForCompensation(null);
+    showToast('赔付确认成功，已生成赔付收入流水', 'success');
+  };
+
+  const handleConfirmLoss = (record: DamageRecord) => {
+    if (record.compensationConfirmed) {
+      showToast('该损耗记录已处理', 'warning');
+      return;
+    }
+    setSelectedDamageForCompensation(record);
+    const equipment = equipments.find((e) => e.id === record.equipmentId);
+    setCompensationFormData({
+      amount: equipment?.price?.toFixed(2) || '0',
+      operator: '管理员',
+    });
+    setIsLossModalOpen(true);
+  };
+
+  const handleSubmitLoss = () => {
+    if (!selectedDamageForCompensation) return;
+    const amount = Number(compensationFormData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      showToast('请输入有效的丢失赔款金额', 'error');
+      return;
+    }
+    confirmEquipmentLoss(selectedDamageForCompensation.id, amount, compensationFormData.operator);
+    setIsLossModalOpen(false);
+    setSelectedDamageForCompensation(null);
+    showToast('装备丢失确认成功，已生成全额赔款收入流水', 'success');
   };
 
   const handleDisabledEquipmentClick = (option: GroupedSelectOption) => {
@@ -501,6 +567,10 @@ export default function DamagePage() {
                             ? 'bg-amber-100 text-amber-700'
                             : record.status === 'repaired'
                             ? 'bg-green-100 text-green-700'
+                            : record.status === 'compensated'
+                            ? 'bg-blue-100 text-blue-700'
+                            : record.status === 'lost'
+                            ? 'bg-red-100 text-red-700'
                             : 'bg-gray-100 text-gray-700'
                         }`}
                       >
@@ -508,10 +578,19 @@ export default function DamagePage() {
                           ? '待处理'
                           : record.status === 'repaired'
                           ? '已修复'
+                          : record.status === 'compensated'
+                          ? '已赔付'
+                          : record.status === 'lost'
+                          ? '已丢失'
                           : '已报废'}
                       </span>
+                      {record.compensationConfirmed && record.compensationAmount !== undefined && (
+                        <span className="text-sm font-medium text-emerald-600">
+                          已赔付: {formatCurrency(record.compensationAmount)}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap justify-end">
                       <Button
                         size="sm"
                         variant="secondary"
@@ -523,6 +602,32 @@ export default function DamagePage() {
                       {record.status === 'reported' && (
                         <Button size="sm" onClick={() => handleMarkRepaired(record.id)}>
                           标记修复
+                        </Button>
+                      )}
+                      {record.status === 'reported' && !record.compensationConfirmed && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          leftIcon={<DollarSign className="w-3.5 h-3.5" />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleConfirmCompensation(record);
+                          }}
+                        >
+                          确认赔付
+                        </Button>
+                      )}
+                      {record.status === 'reported' && !record.compensationConfirmed && (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          leftIcon={<PackageX className="w-3.5 h-3.5" />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleConfirmLoss(record);
+                          }}
+                        >
+                          丢失确认
                         </Button>
                       )}
                     </div>
@@ -797,6 +902,178 @@ export default function DamagePage() {
             <Button type="submit">确认登记</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={isCompensationModalOpen}
+        onClose={() => setIsCompensationModalOpen(false)}
+        title="损耗赔付确认"
+        size="lg"
+      >
+        {selectedDamageForCompensation && (
+          <div className="space-y-4">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <DollarSign className="w-6 h-6 text-emerald-600" />
+                <div>
+                  <p className="font-semibold text-emerald-800">确认损耗赔付</p>
+                  <p className="text-sm text-emerald-600">
+                    {getEquipmentName(selectedDamageForCompensation.equipmentId)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-medium text-gray-800 mb-2">损耗信息</h4>
+              <p className="text-sm text-gray-600">{selectedDamageForCompensation.description}</p>
+              <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                <span>损耗程度：{damageLevelInfo[selectedDamageForCompensation.level].label}</span>
+                <span>登记日期：{formatDate(selectedDamageForCompensation.date)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  赔付金额（元） <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={compensationFormData.amount}
+                  onChange={(e) => setCompensationFormData({ ...compensationFormData, amount: e.target.value })}
+                  required
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  placeholder="请输入赔付金额"
+                />
+                <p className="text-xs text-gray-500 mt-1">系统建议按设备价值的30%赔付</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  操作人
+                </label>
+                <input
+                  type="text"
+                  value={compensationFormData.operator}
+                  onChange={(e) => setCompensationFormData({ ...compensationFormData, operator: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm text-amber-700">
+                <strong>提示：</strong>确认赔付后将自动生成"损耗赔付收入"流水记录，并可在财务对账模块中查看。
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsCompensationModalOpen(false)}
+              >
+                取消
+              </Button>
+              <Button onClick={handleSubmitCompensation}>
+                确认赔付
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={isLossModalOpen}
+        onClose={() => setIsLossModalOpen(false)}
+        title="装备丢失确认"
+        size="lg"
+      >
+        {selectedDamageForCompensation && (
+          <div className="space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <PackageX className="w-6 h-6 text-red-600" />
+                <div>
+                  <p className="font-semibold text-red-800">确认装备丢失</p>
+                  <p className="text-sm text-red-600">
+                    {getEquipmentName(selectedDamageForCompensation.equipmentId)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-medium text-gray-800 mb-2">设备信息</h4>
+              <p className="text-sm text-gray-600">{selectedDamageForCompensation.description}</p>
+              {(() => {
+                const equipment = equipments.find((e) => e.id === selectedDamageForCompensation.equipmentId);
+                return equipment ? (
+                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                    <span>设备编号：{equipment.equipmentNo}</span>
+                    <span>购置价值：{formatCurrency(equipment.price)}</span>
+                  </div>
+                ) : null;
+              })()}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  丢失赔款金额（元） <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={compensationFormData.amount}
+                  onChange={(e) => setCompensationFormData({ ...compensationFormData, amount: e.target.value })}
+                  required
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  placeholder="请输入全额赔款金额"
+                />
+                <p className="text-xs text-gray-500 mt-1">默认按设备购置价值全额赔偿</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  操作人
+                </label>
+                <input
+                  type="text"
+                  value={compensationFormData.operator}
+                  onChange={(e) => setCompensationFormData({ ...compensationFormData, operator: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm text-amber-700">
+                <strong>重要提示：</strong>确认丢失后：
+              </p>
+              <ul className="text-sm text-amber-700 mt-1 list-disc list-inside">
+                <li>设备状态将更新为"已报废"</li>
+                <li>将自动生成"装备丢失全额赔款"收入流水</li>
+                <li>相关记录可在财务对账模块中查看</li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsLossModalOpen(false)}
+              >
+                取消
+              </Button>
+              <Button variant="danger" onClick={handleSubmitLoss}>
+                确认丢失
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
     </>

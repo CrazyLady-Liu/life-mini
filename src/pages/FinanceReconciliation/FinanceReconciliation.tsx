@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Search, ArrowRightLeft, Download, FileText, Filter, PieChart, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search, ArrowRightLeft, Download, FileText, Filter, PieChart, TrendingUp, TrendingDown, Users } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import Button from '@/components/Button';
-import { formatCurrency, formatDate, formatDateTime, transactionTypeLabels, financeCategoryLabels, voucherStatusLabels } from '@/utils/format';
+import { formatCurrency, formatDate, formatDateTime, transactionTypeLabels, financeCategoryLabels, voucherStatusLabels, customerChannelLabels } from '@/utils/format';
 import { exportVoucherHTML } from '@/utils/export';
-import type { TransactionType, FinanceCategory } from '@/types';
+import type { TransactionType, FinanceCategory, CustomerChannel } from '@/types';
 
 export default function FinanceReconciliation() {
   const {
@@ -21,6 +21,7 @@ export default function FinanceReconciliation() {
   const [typeFilter, setTypeFilter] = useState<TransactionType | ''>('');
   const [categoryFilter, setCategoryFilter] = useState<FinanceCategory | ''>('');
   const [directionFilter, setDirectionFilter] = useState<'income' | 'expense' | ''>('');
+  const [channelFilter, setChannelFilter] = useState<CustomerChannel | ''>('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
   const filteredFlows = useMemo(() => {
@@ -39,15 +40,16 @@ export default function FinanceReconciliation() {
         const matchesType = !typeFilter || flow.type === typeFilter;
         const matchesCategory = !categoryFilter || flow.financeCategory === categoryFilter;
         const matchesDirection = !directionFilter || flow.direction === directionFilter;
+        const matchesChannel = !channelFilter || flow.channel === channelFilter;
         
         const flowDate = new Date(flow.createdAt);
         const matchesStartDate = !dateRange.start || flowDate >= new Date(dateRange.start);
         const matchesEndDate = !dateRange.end || flowDate <= new Date(dateRange.end + 'T23:59:59');
         
-        return matchesSearch && matchesType && matchesCategory && matchesDirection && matchesStartDate && matchesEndDate;
+        return matchesSearch && matchesType && matchesCategory && matchesDirection && matchesChannel && matchesStartDate && matchesEndDate;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [fundFlowRecords, rentals, customers, equipments, searchTerm, typeFilter, categoryFilter, directionFilter, dateRange]);
+  }, [fundFlowRecords, rentals, customers, equipments, searchTerm, typeFilter, categoryFilter, directionFilter, channelFilter, dateRange]);
 
   const totalIncome = useMemo(() => {
     return filteredFlows
@@ -79,13 +81,14 @@ export default function FinanceReconciliation() {
   };
 
   const handleExportCSV = () => {
-    const headers = ['流水号', '交易类型', '财务分类', '金额', '方向', '客户', '装备', '操作人', '操作时间', '变更原因', '凭证状态', '凭证号'];
+    const headers = ['流水号', '交易类型', '财务分类', '金额', '方向', '渠道', '客户', '装备', '操作人', '操作时间', '变更原因', '凭证状态', '凭证号'];
     const rows = filteredFlows.map((flow) => [
       flow.flowNo,
       transactionTypeLabels[flow.type] || flow.type,
       financeCategoryLabels[flow.financeCategory] || flow.financeCategory,
       flow.amount.toString(),
       flow.direction === 'income' ? '收入' : '支出',
+      flow.channel ? customerChannelLabels[flow.channel] : '-',
       getCustomerName(flow.customerId),
       getEquipmentName(flow.rentalId),
       flow.operator,
@@ -106,7 +109,7 @@ export default function FinanceReconciliation() {
   };
 
   const handleExportFinanceDetail = () => {
-    const headers = ['租赁单号', '客户', '装备', '单品租金收入', '套餐优惠抵扣', '优惠券减免', '配送附加费', '逾期罚金', '损坏赔偿', '押金扣款收入', '优惠合计', '实际收入', '结算状态'];
+    const headers = ['租赁单号', '客户', '装备', '单品租金收入', '套餐优惠抵扣', '优惠券减免', '配送费', '清洁费', '打包费', '逾期罚金', '损坏赔偿', '丢失赔款', '押金扣款收入', '押金抵扣', '优惠合计', '实际收入', '结算状态'];
     const rows = rentalFinanceDetails.map((detail) => {
       const rental = rentals.find((r) => r.id === detail.rentalId);
       return [
@@ -117,9 +120,13 @@ export default function FinanceReconciliation() {
         detail.packageDiscount.toString(),
         detail.couponDiscount.toString(),
         detail.deliveryFee.toString(),
+        detail.cleaningFee.toString(),
+        detail.packingFee.toString(),
         detail.penaltyAmount.toString(),
         detail.damageCompensation.toString(),
+        detail.lossCompensation.toString(),
         detail.depositForfeited.toString(),
+        detail.depositOffset.toString(),
         detail.totalDiscount.toString(),
         detail.actualIncome.toString(),
         rental?.status === 'returned' ? '已结算' : '进行中',
@@ -204,7 +211,7 @@ export default function FinanceReconciliation() {
             <Filter className="w-4 h-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">筛选条件</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
             <div className="relative lg:col-span-2">
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -224,6 +231,16 @@ export default function FinanceReconciliation() {
               {Object.entries(transactionTypeLabels).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
               ))}
+            </select>
+            <select
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value as CustomerChannel | '')}
+              className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+            >
+              <option value="">全部渠道</option>
+              <option value="individual">散客</option>
+              <option value="group">团建</option>
+              <option value="online">线上渠道</option>
             </select>
             <select
               value={categoryFilter}
@@ -268,6 +285,7 @@ export default function FinanceReconciliation() {
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">流水号</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">交易类型</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">财务分类</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">渠道</th>
                 <th className="text-right py-3 px-4 text-xs font-medium text-gray-500 uppercase">金额</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">客户</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">装备</th>
@@ -292,6 +310,19 @@ export default function FinanceReconciliation() {
                     <span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                       {financeCategoryLabels[flow.financeCategory] || flow.financeCategory}
                     </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    {flow.channel ? (
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                        flow.channel === 'individual' ? 'bg-blue-100 text-blue-700' :
+                        flow.channel === 'group' ? 'bg-purple-100 text-purple-700' :
+                        'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {customerChannelLabels[flow.channel]}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-right">
                     <span className={`text-sm font-semibold ${

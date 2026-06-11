@@ -29,6 +29,7 @@ import type {
   CustomerCoupon,
   FinanceVoucher,
   VoucherStatus,
+  CustomerChannel,
   AddEquipmentInput,
   AddDamageRecordInput,
 } from '../types';
@@ -57,6 +58,12 @@ import {
   calculateDepositSettlement,
   splitRentalFinance,
   createFundFlowRecord,
+  generateRentalIncomeFlows,
+  generateDamageCompensationFlows,
+  generatePenaltyFlows,
+  generateDepositOffsetFlows,
+  generateValueAddedServiceFlows,
+  generateAllIncomeFlows,
 } from '../utils/finance';
 
 interface AppState {
@@ -92,9 +99,29 @@ interface AppState {
   updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
   deleteSupplier: (id: string) => void;
   
-  addRental: (rental: Omit<Rental, 'id' | 'createdAt' | 'status'> & { status?: RentalStatus }) => void;
+  addRental: (rental: Omit<Rental, 'id' | 'createdAt' | 'status' | 'channel'> & { status?: RentalStatus; channel?: CustomerChannel }) => void;
   updateRental: (id: string, rental: Partial<Rental>) => void;
-  returnRental: (id: string, options?: { penaltyAmount?: number; damageCompensation?: number; adjustmentReason?: string; operator?: string; packageDiscount?: number; couponDiscount?: number; deliveryFee?: number; couponId?: string }) => void;
+  returnRental: (id: string, options?: { 
+    penaltyAmount?: number; 
+    damageCompensation?: number; 
+    adjustmentReason?: string; 
+    operator?: string; 
+    packageDiscount?: number; 
+    couponDiscount?: number; 
+    deliveryFee?: number; 
+    cleaningFee?: number;
+    packingFee?: number;
+    lossCompensation?: number;
+    depositOffset?: number;
+    offsetType?: 'rental' | 'damage' | 'penalty';
+    damageId?: string;
+    isFullLoss?: boolean;
+    couponId?: string;
+  }) => void;
+  renewRental: (originalRentalId: string, options: { endDate: string; price: number; operator?: string }) => void;
+  confirmDamageCompensation: (damageId: string, amount: number, operator?: string) => void;
+  confirmEquipmentLoss: (damageId: string, amount: number, operator?: string) => void;
+  offsetDeposit: (rentalId: string, amount: number, offsetType: 'rental' | 'damage' | 'penalty', operator?: string) => void;
   
   addDamageRecord: (record: AddDamageRecordInput) => void;
   updateDamageRecord: (id: string, record: Partial<DamageRecord>) => void;
@@ -254,13 +281,14 @@ export const useAppStore = create<AppState>()(
         }));
       },
       
-      addRental: (rental, options = {}) => {
+      addRental: (rental) => {
         const now = new Date().toISOString();
         const newRentalId = generateId();
         const newRental: Rental = {
           ...rental,
           id: newRentalId,
           status: rental.status || 'active',
+          channel: rental.channel || 'individual',
           createdAt: now,
         };
         
@@ -309,23 +337,16 @@ export const useAppStore = create<AppState>()(
               packageDiscount: 0,
               couponDiscount: 0,
               deliveryFee: 0,
+              cleaningFee: 0,
+              packingFee: 0,
               penaltyAmount: 0,
               damageCompensation: 0,
+              lossCompensation: 0,
               depositForfeited: 0,
+              depositOffset: 0,
             });
             
-            const rentalFeeFlow = createFundFlowRecord({
-              rentalId: newRentalId,
-              customerId: rental.customerId,
-              type: 'rental_fee',
-              amount: rental.price,
-              direction: 'income',
-              operator: '系统',
-              changeReason: '创建租赁订单，产生租金应收',
-              relatedDepositId: undefined,
-              relatedPenaltyId: undefined,
-            });
-            fundFlows.push(rentalFeeFlow);
+            fundFlows.push(...generateRentalIncomeFlows(newRental, '系统'));
           }
           
           const newState: any = {
@@ -372,6 +393,13 @@ export const useAppStore = create<AppState>()(
           packageDiscount = 0,
           couponDiscount = 0,
           deliveryFee = 0,
+          cleaningFee = 0,
+          packingFee = 0,
+          lossCompensation = 0,
+          depositOffset = 0,
+          offsetType = 'rental',
+          damageId,
+          isFullLoss = false,
           couponId,
         } = options;
         
@@ -429,23 +457,10 @@ export const useAppStore = create<AppState>()(
                 operator,
                 createdAt: now,
               });
-              
-              const penaltyFlow = createFundFlowRecord({
-                rentalId: id,
-                customerId: rental.customerId,
-                type: 'penalty',
-                amount: finalPenaltyAmount,
-                direction: 'income',
-                operator,
-                changeReason: isAdjusted 
-                  ? `逾期违约金（${calculatedPenalty.overdueDays}天，已调整）` 
-                  : `逾期${calculatedPenalty.overdueDays}天，产生违约金`,
-                relatedPenaltyId: newPenalty.id,
-              });
-              newFundFlows.push(penaltyFlow);
             }
             
-            const settlement = calculateDepositSettlement(depositRecord, finalPenaltyAmount, damageCompensation);
+            const totalDeduction = finalPenaltyAmount + damageCompensation + lossCompensation;
+            const settlement = calculateDepositSettlement(depositRecord, finalPenaltyAmount, damageCompensation + lossCompensation);
             
             const updatedDeposit = {
               ...depositRecord,
@@ -473,7 +488,7 @@ export const useAppStore = create<AppState>()(
                 createdAt: now,
               });
               
-              const refundFlow = createFundFlowRecord({
+              newFundFlows.push(createFundFlowRecord({
                 rentalId: id,
                 customerId: rental.customerId,
                 type: 'deposit_refund',
@@ -482,8 +497,7 @@ export const useAppStore = create<AppState>()(
                 operator,
                 changeReason: `装备归还，${settlement.newStatus === 'refunded_full' ? '全额退还押金' : '部分退还押金'}`,
                 relatedDepositId: depositRecord.id,
-              });
-              newFundFlows.push(refundFlow);
+              }));
             }
             
             if (settlement.forfeitAmount > 0) {
@@ -494,39 +508,45 @@ export const useAppStore = create<AppState>()(
                 type: 'deposit_forfeit',
                 amount: settlement.forfeitAmount,
                 direction: 'income',
-                description: `扣除押金（违约金: ${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `, 损坏赔偿: ${damageCompensation.toFixed(2)}` : ''}）`,
+                description: `扣除押金（违约金: ${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `, 损坏赔偿: ${damageCompensation.toFixed(2)}` : ''}${lossCompensation > 0 ? `, 丢失赔款: ${lossCompensation.toFixed(2)}` : ''}）`,
                 operator,
                 createdAt: now,
               });
               
-              const forfeitFlow = createFundFlowRecord({
+              newFundFlows.push(createFundFlowRecord({
                 rentalId: id,
                 customerId: rental.customerId,
                 type: 'deposit_forfeit',
                 amount: settlement.forfeitAmount,
                 direction: 'income',
                 operator,
-                changeReason: `扣除押金抵扣费用（违约金${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `+损坏赔偿${damageCompensation.toFixed(2)}` : ''}）`,
+                changeReason: `扣除押金抵扣费用（违约金${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `+损坏赔偿${damageCompensation.toFixed(2)}` : ''}${lossCompensation > 0 ? `+丢失赔款${lossCompensation.toFixed(2)}` : ''}）`,
                 relatedDepositId: depositRecord.id,
-              });
-              newFundFlows.push(forfeitFlow);
+              }));
             }
             
-            if (damageCompensation > 0) {
-              const damageFlow = createFundFlowRecord({
-                rentalId: id,
-                customerId: rental.customerId,
-                type: 'damage_compensation',
-                amount: damageCompensation,
-                direction: 'income',
-                operator,
-                changeReason: '装备损坏赔偿',
-              });
-              newFundFlows.push(damageFlow);
+            const allIncomeFlows = generateAllIncomeFlows(rental, {
+              penalty: newPenalty || undefined,
+              damageCompensation: damageId ? { damageId, amount: damageCompensation, isFullLoss } : undefined,
+              depositOffset: depositOffset > 0 ? { depositId: depositRecord.id, amount: depositOffset, offsetType } : undefined,
+              valueAddedServices: { deliveryFee, cleaningFee, packingFee },
+              operator,
+            });
+            newFundFlows.push(...allIncomeFlows);
+            
+            if (lossCompensation > 0 && damageId) {
+              newFundFlows.push(...generateDamageCompensationFlows(
+                id,
+                rental.customerId,
+                damageId,
+                lossCompensation,
+                true,
+                operator
+              ));
             }
             
             if (packageDiscount > 0) {
-              const discountFlow = createFundFlowRecord({
+              newFundFlows.push(createFundFlowRecord({
                 rentalId: id,
                 customerId: rental.customerId,
                 type: 'package_discount',
@@ -534,12 +554,11 @@ export const useAppStore = create<AppState>()(
                 direction: 'expense',
                 operator,
                 changeReason: '套餐优惠抵扣',
-              });
-              newFundFlows.push(discountFlow);
+              }));
             }
             
             if (couponDiscount > 0) {
-              const couponFlow = createFundFlowRecord({
+              newFundFlows.push(createFundFlowRecord({
                 rentalId: id,
                 customerId: rental.customerId,
                 type: 'coupon_discount',
@@ -547,21 +566,7 @@ export const useAppStore = create<AppState>()(
                 direction: 'expense',
                 operator,
                 changeReason: '客户优惠券抵扣',
-              });
-              newFundFlows.push(couponFlow);
-            }
-            
-            if (deliveryFee > 0) {
-              const deliveryFlow = createFundFlowRecord({
-                rentalId: id,
-                customerId: rental.customerId,
-                type: 'delivery_fee',
-                amount: deliveryFee,
-                direction: 'income',
-                operator,
-                changeReason: '配送附加费',
-              });
-              newFundFlows.push(deliveryFlow);
+              }));
             }
             
             if (existingFinanceDetail) {
@@ -569,12 +574,16 @@ export const useAppStore = create<AppState>()(
                 ...existingFinanceDetail,
                 penaltyAmount: finalPenaltyAmount,
                 damageCompensation,
+                lossCompensation,
                 packageDiscount,
                 couponDiscount,
                 deliveryFee,
+                cleaningFee,
+                packingFee,
                 depositForfeited: settlement.forfeitAmount,
+                depositOffset,
                 totalDiscount: packageDiscount + couponDiscount,
-                actualIncome: rental.price - packageDiscount - couponDiscount + deliveryFee + finalPenaltyAmount + damageCompensation + settlement.forfeitAmount,
+                actualIncome: rental.price - packageDiscount - couponDiscount + deliveryFee + cleaningFee + packingFee + finalPenaltyAmount + damageCompensation + lossCompensation + settlement.forfeitAmount + depositOffset,
                 updatedAt: now,
               };
             }
@@ -606,6 +615,216 @@ export const useAppStore = create<AppState>()(
               ? state.rentalFinanceDetails.map((d) => d.id === updatedFinanceDetail!.id ? updatedFinanceDetail! : d)
               : state.rentalFinanceDetails,
             customerCoupons: updatedCoupons,
+          };
+        });
+      },
+      
+      renewRental: (originalRentalId, options) => {
+        const now = new Date().toISOString();
+        const { endDate, price, operator = '系统' } = options;
+        
+        set((state) => {
+          const originalRental = state.rentals.find((r) => r.id === originalRentalId);
+          if (!originalRental || originalRental.status !== 'active') {
+            return state;
+          }
+          
+          const newRentalId = generateId();
+          const newRental: Rental = {
+            ...originalRental,
+            id: newRentalId,
+            startDate: originalRental.endDate,
+            endDate,
+            price,
+            status: 'active',
+            originalRentalId,
+            createdAt: now,
+          };
+          
+          const updatedOriginalRental = {
+            ...originalRental,
+            status: 'returned' as RentalStatus,
+          };
+          
+          const updatedRentals = state.rentals.map((r) =>
+            r.id === originalRentalId ? updatedOriginalRental : r
+          );
+          updatedRentals.push(newRental);
+          
+          let newFundFlows: FundFlowRecord[] = [];
+          let newFinanceDetail: RentalFinanceDetail | null = null;
+          
+          newFundFlows.push(...generateRentalIncomeFlows(newRental, operator));
+          
+          newFinanceDetail = splitRentalFinance(newRental, {
+            packageDiscount: 0,
+            couponDiscount: 0,
+            deliveryFee: 0,
+            cleaningFee: 0,
+            packingFee: 0,
+            penaltyAmount: 0,
+            damageCompensation: 0,
+            lossCompensation: 0,
+            depositForfeited: 0,
+            depositOffset: 0,
+          });
+          
+          return {
+            rentals: updatedRentals,
+            fundFlowRecords: [...state.fundFlowRecords, ...newFundFlows],
+            rentalFinanceDetails: newFinanceDetail
+              ? [...state.rentalFinanceDetails, newFinanceDetail]
+              : state.rentalFinanceDetails,
+          };
+        });
+      },
+      
+      confirmDamageCompensation: (damageId, amount, operator = '系统') => {
+        const now = new Date().toISOString();
+        
+        set((state) => {
+          const damageRecord = state.damageRecords.find((d) => d.id === damageId);
+          if (!damageRecord || damageRecord.compensationConfirmed) {
+            return state;
+          }
+          
+          const activeRental = state.rentals.find(
+            (r) => r.equipmentId === damageRecord.equipmentId && r.status === 'active'
+          );
+          const rentalId = activeRental?.id || 'N/A';
+          const customerId = activeRental?.customerId || 'N/A';
+          
+          const updatedDamageRecord = {
+            ...damageRecord,
+            status: 'compensated' as const,
+            compensationAmount: amount,
+            compensationConfirmed: true,
+            compensationOperator: operator,
+            compensationDate: now,
+          };
+          
+          const newFlows = generateDamageCompensationFlows(
+            rentalId,
+            customerId,
+            damageId,
+            amount,
+            false,
+            operator
+          );
+          
+          return {
+            damageRecords: state.damageRecords.map((d) =>
+              d.id === damageId ? updatedDamageRecord : d
+            ),
+            fundFlowRecords: [...state.fundFlowRecords, ...newFlows],
+          };
+        });
+      },
+      
+      confirmEquipmentLoss: (damageId, amount, operator = '系统') => {
+        const now = new Date().toISOString();
+        
+        set((state) => {
+          const damageRecord = state.damageRecords.find((d) => d.id === damageId);
+          if (!damageRecord) {
+            return state;
+          }
+          
+          const activeRental = state.rentals.find(
+            (r) => r.equipmentId === damageRecord.equipmentId && r.status === 'active'
+          );
+          const rentalId = activeRental?.id || 'N/A';
+          const customerId = activeRental?.customerId || 'N/A';
+          
+          const updatedDamageRecord = {
+            ...damageRecord,
+            status: 'lost' as const,
+            compensationAmount: amount,
+            compensationConfirmed: true,
+            compensationOperator: operator,
+            compensationDate: now,
+            isFullLoss: true,
+          };
+          
+          const updatedEquipments = state.equipments.map((e) =>
+            e.id === damageRecord.equipmentId
+              ? { ...e, status: 'scrapped' as EquipmentStatus, updatedAt: now }
+              : e
+          );
+          
+          const newFlows = generateDamageCompensationFlows(
+            rentalId,
+            customerId,
+            damageId,
+            amount,
+            true,
+            operator
+          );
+          
+          return {
+            damageRecords: state.damageRecords.map((d) =>
+              d.id === damageId ? updatedDamageRecord : d
+            ),
+            equipments: updatedEquipments,
+            fundFlowRecords: [...state.fundFlowRecords, ...newFlows],
+          };
+        });
+      },
+      
+      offsetDeposit: (rentalId, amount, offsetType, operator = '系统') => {
+        const now = new Date().toISOString();
+        
+        set((state) => {
+          const depositRecord = state.depositRecords.find((d) => d.rentalId === rentalId);
+          const rental = state.rentals.find((r) => r.id === rentalId);
+          
+          if (!depositRecord || !rental) {
+            return state;
+          }
+          
+          const newOffsetAmount = (depositRecord.forfeitedAmount || 0) + amount;
+          const updatedDeposit = {
+            ...depositRecord,
+            forfeitedAmount: newOffsetAmount,
+            status: newOffsetAmount >= depositRecord.collectedAmount
+              ? 'forfeited' as DepositStatus
+              : depositRecord.status,
+            updatedAt: now,
+          };
+          
+          const newFlows = generateDepositOffsetFlows(
+            rentalId,
+            rental.customerId,
+            depositRecord.id,
+            amount,
+            offsetType,
+            operator
+          );
+          
+          const existingFinanceDetail = state.rentalFinanceDetails.find(
+            (d) => d.rentalId === rentalId
+          );
+          let updatedFinanceDetail = state.rentalFinanceDetails;
+          
+          if (existingFinanceDetail) {
+            updatedFinanceDetail = state.rentalFinanceDetails.map((d) =>
+              d.id === existingFinanceDetail.id
+                ? {
+                    ...d,
+                    depositOffset: d.depositOffset + amount,
+                    actualIncome: d.actualIncome + amount,
+                    updatedAt: now,
+                  }
+                : d
+            );
+          }
+          
+          return {
+            depositRecords: state.depositRecords.map((d) =>
+              d.id === depositRecord.id ? updatedDeposit : d
+            ),
+            fundFlowRecords: [...state.fundFlowRecords, ...newFlows],
+            rentalFinanceDetails: updatedFinanceDetail,
           };
         });
       },

@@ -103,16 +103,27 @@ export const depositRuleTypeLabels: Record<string, string> = {
   package: '套餐押金',
 };
 
+export const customerChannelLabels: Record<string, string> = {
+  individual: '散客',
+  group: '团建',
+  online: '线上渠道',
+};
+
 export const transactionTypeLabels: Record<string, string> = {
   deposit_collect: '押金收取',
   deposit_refund: '押金退还',
   deposit_forfeit: '押金没收',
+  deposit_offset: '押金抵扣',
   penalty: '逾期违约金',
   rental_fee: '租赁费用',
+  rental_renewal_fee: '续租费用',
   damage_compensation: '损坏赔偿',
+  loss_compensation: '丢失赔款',
   package_discount: '套餐优惠抵扣',
   coupon_discount: '优惠券抵扣',
-  delivery_fee: '配送附加费',
+  delivery_fee: '配送费',
+  cleaning_fee: '清洁费',
+  packing_fee: '装备打包费',
   refund_rental: '租金退款',
 };
 
@@ -127,10 +138,15 @@ export const financeCategoryLabels: Record<string, string> = {
   rental_income: '租金收入',
   deposit_income: '押金收入',
   deposit_refund: '押金退还',
+  deposit_offset_income: '押金抵扣收入',
   penalty_income: '违约金收入',
   damage_compensation: '损坏赔偿',
+  loss_compensation: '丢失赔款',
   discount: '优惠抵扣',
   delivery_fee: '配送费用',
+  cleaning_fee: '清洁费用',
+  packing_fee: '打包服务',
+  value_added_service: '增值服务费',
   other: '其他',
 };
 

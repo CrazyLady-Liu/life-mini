@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
-import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, CreditCard, PieChart, ArrowRightLeft, FileText, Download } from 'lucide-react';
+import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, CreditCard, PieChart, ArrowRightLeft, FileText, Download, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
-import { formatCurrency, formatDate, formatDateTime, depositStatusLabels, transactionTypeLabels, financeCategoryLabels } from '@/utils/format';
+import { formatCurrency, formatDate, formatDateTime, depositStatusLabels, transactionTypeLabels, financeCategoryLabels, customerChannelLabels } from '@/utils/format';
+import type { CustomerChannel } from '@/types';
 import { exportVoucherHTML } from '@/utils/export';
 import type { Rental } from '@/types';
 
@@ -16,6 +17,8 @@ export default function RentalsPage() {
     addRental,
     returnRental,
     collectDeposit,
+    renewRental,
+    offsetDeposit,
     getDepositRecordByRentalId,
     getPenaltyByRentalId,
     getFinanceDetailByRentalId,
@@ -39,6 +42,7 @@ export default function RentalsPage() {
     startDate: '',
     endDate: '',
     price: '',
+    channel: 'individual' as CustomerChannel,
     notes: '',
   });
 
@@ -50,6 +54,20 @@ export default function RentalsPage() {
     packageDiscount: '',
     couponDiscount: '',
     deliveryFee: '',
+    cleaningFee: '',
+    packingFee: '',
+    lossCompensation: '',
+    depositOffset: '',
+    offsetType: 'rental' as 'rental' | 'damage' | 'penalty',
+    damageId: '',
+    isFullLoss: false,
+  });
+
+  const [isRenewModalOpen, setIsRenewModalOpen] = useState(false);
+  const [renewFormData, setRenewFormData] = useState({
+    endDate: '',
+    price: '',
+    operator: '管理员',
   });
 
   const availableEquipments = useMemo(() => {
@@ -108,8 +126,39 @@ export default function RentalsPage() {
       packageDiscount: '0',
       couponDiscount: '0',
       deliveryFee: '0',
+      cleaningFee: '0',
+      packingFee: '0',
+      lossCompensation: '0',
+      depositOffset: '0',
+      offsetType: 'rental',
+      damageId: '',
+      isFullLoss: false,
     });
     setIsReturnModalOpen(true);
+  };
+
+  const handleRenew = (rental: Rental) => {
+    setSelectedRental(rental);
+    setRenewFormData({
+      endDate: '',
+      price: '',
+      operator: '管理员',
+    });
+    setIsRenewModalOpen(true);
+  };
+
+  const handleConfirmRenew = () => {
+    if (!selectedRental || !renewFormData.endDate || !renewFormData.price) {
+      alert('请填写完整的续租信息');
+      return;
+    }
+    renewRental(selectedRental.id, {
+      endDate: renewFormData.endDate,
+      price: Number(renewFormData.price),
+      operator: renewFormData.operator,
+    });
+    setIsRenewModalOpen(false);
+    setSelectedRental(null);
   };
 
   const handleConfirmReturn = () => {
@@ -123,6 +172,13 @@ export default function RentalsPage() {
       packageDiscount: Number(returnFormData.packageDiscount) || 0,
       couponDiscount: Number(returnFormData.couponDiscount) || 0,
       deliveryFee: Number(returnFormData.deliveryFee) || 0,
+      cleaningFee: Number(returnFormData.cleaningFee) || 0,
+      packingFee: Number(returnFormData.packingFee) || 0,
+      lossCompensation: Number(returnFormData.lossCompensation) || 0,
+      depositOffset: Number(returnFormData.depositOffset) || 0,
+      offsetType: returnFormData.offsetType,
+      damageId: returnFormData.damageId || undefined,
+      isFullLoss: returnFormData.isFullLoss,
     });
     
     setIsReturnModalOpen(false);
@@ -152,6 +208,7 @@ export default function RentalsPage() {
       startDate: formData.startDate,
       endDate: formData.endDate,
       price: Number(formData.price),
+      channel: formData.channel,
       notes: formData.notes,
     });
     setIsModalOpen(false);
@@ -290,6 +347,26 @@ export default function RentalsPage() {
                       <StatusBadge status={rental.status} variant="rental" />
                       
                       <div className="flex items-center gap-2">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                          rental.channel === 'individual' ? 'bg-blue-100 text-blue-700' :
+                          rental.channel === 'group' ? 'bg-purple-100 text-purple-700' :
+                          'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {customerChannelLabels[rental.channel]}
+                        </span>
+                        {rental.status === 'active' && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            leftIcon={<RefreshCw className="w-4 h-4" />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRenew(rental);
+                            }}
+                          >
+                            续租
+                          </Button>
+                        )}
                         {rental.status === 'active' && (
                           <Button
                             size="sm"
@@ -874,6 +951,21 @@ export default function RentalsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                客户渠道 <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.channel}
+                onChange={(e) => setFormData({ ...formData, channel: e.target.value as CustomerChannel })}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              >
+                <option value="individual">散客</option>
+                <option value="group">团建</option>
+                <option value="online">线上渠道</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 押金信息
               </label>
               <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
@@ -988,7 +1080,21 @@ export default function RentalsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  配送附加费（元）
+                  装备丢失赔款（元）
+                </label>
+                <input
+                  type="number"
+                  value={returnFormData.lossCompensation}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, lossCompensation: e.target.value })}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">装备丢失全额赔偿金额</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  配送费（元）
                 </label>
                 <input
                   type="number"
@@ -999,6 +1105,34 @@ export default function RentalsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">配送或上门服务费</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  清洁费（元）
+                </label>
+                <input
+                  type="number"
+                  value={returnFormData.cleaningFee}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, cleaningFee: e.target.value })}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">装备清洁服务费</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  装备打包费（元）
+                </label>
+                <input
+                  type="number"
+                  value={returnFormData.packingFee}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, packingFee: e.target.value })}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">装备打包服务费</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1029,6 +1163,57 @@ export default function RentalsPage() {
                 <p className="text-xs text-gray-500 mt-1">客户使用优惠券抵扣</p>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  押金抵扣（元）
+                </label>
+                <input
+                  type="number"
+                  value={returnFormData.depositOffset}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, depositOffset: e.target.value })}
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">客户押金直接抵扣费用</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  押金抵扣类型
+                </label>
+                <select
+                  value={returnFormData.offsetType}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, offsetType: e.target.value as 'rental' | 'damage' | 'penalty' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                >
+                  <option value="rental">抵扣租金</option>
+                  <option value="damage">抵扣赔付</option>
+                  <option value="penalty">抵扣违约金</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  关联损耗记录ID
+                </label>
+                <input
+                  type="text"
+                  value={returnFormData.damageId}
+                  onChange={(e) => setReturnFormData({ ...returnFormData, damageId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  placeholder="可选，关联损耗记录"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={returnFormData.isFullLoss}
+                    onChange={(e) => setReturnFormData({ ...returnFormData, isFullLoss: e.target.checked })}
+                    className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+                  />
+                  <span className="text-sm text-gray-700">全额丢失赔付</span>
+                </label>
+              </div>
+              <div className="md:col-span-3">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   操作人
                 </label>
@@ -1098,6 +1283,92 @@ export default function RentalsPage() {
               </Button>
               <Button onClick={handleConfirmReturn}>
                 确认归还
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={isRenewModalOpen}
+        onClose={() => setIsRenewModalOpen(false)}
+        title="续租确认"
+        size="lg"
+      >
+        {selectedRental && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <RefreshCw className="w-6 h-6 text-blue-600" />
+                <div>
+                  <p className="font-semibold text-blue-800">确认续租？</p>
+                  <p className="text-sm text-blue-600">
+                    {getEquipmentName(selectedRental.equipmentId)} - {getCustomerName(selectedRental.customerId)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  当前租期结束
+                </label>
+                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                  <p className="text-sm text-gray-700">{selectedRental.endDate}</p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  续租结束日期 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={renewFormData.endDate}
+                  onChange={(e) => setRenewFormData({ ...renewFormData, endDate: e.target.value })}
+                  required
+                  min={selectedRental.endDate}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  续租租金 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={renewFormData.price}
+                  onChange={(e) => setRenewFormData({ ...renewFormData, price: e.target.value })}
+                  required
+                  min="0"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  placeholder="请输入续租租金"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  操作人
+                </label>
+                <input
+                  type="text"
+                  value={renewFormData.operator}
+                  onChange={(e) => setRenewFormData({ ...renewFormData, operator: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsRenewModalOpen(false)}
+              >
+                取消
+              </Button>
+              <Button onClick={handleConfirmRenew}>
+                确认续租
               </Button>
             </div>
           </div>

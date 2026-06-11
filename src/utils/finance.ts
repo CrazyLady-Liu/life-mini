@@ -13,6 +13,7 @@ import type {
   FinanceCategory,
   TransactionType,
   CustomerCoupon,
+  CustomerChannel,
 } from '../types';
 import { highValueThreshold, generateId } from './format';
 
@@ -168,12 +169,17 @@ export const getFinanceCategory = (type: TransactionType): FinanceCategory => {
     deposit_collect: 'deposit_income',
     deposit_refund: 'deposit_refund',
     deposit_forfeit: 'deposit_income',
+    deposit_offset: 'deposit_offset_income',
     penalty: 'penalty_income',
     rental_fee: 'rental_income',
+    rental_renewal_fee: 'rental_income',
     damage_compensation: 'damage_compensation',
+    loss_compensation: 'loss_compensation',
     package_discount: 'discount',
     coupon_discount: 'discount',
     delivery_fee: 'delivery_fee',
+    cleaning_fee: 'cleaning_fee',
+    packing_fee: 'packing_fee',
     refund_rental: 'rental_income',
   };
   return categoryMap[type] || 'other';
@@ -189,6 +195,8 @@ export const createFundFlowRecord = (params: {
   changeReason: string;
   relatedDepositId?: string;
   relatedPenaltyId?: string;
+  relatedDamageId?: string;
+  channel?: CustomerChannel;
   remark?: string;
 }): FundFlowRecord => {
   const now = new Date().toISOString();
@@ -199,10 +207,12 @@ export const createFundFlowRecord = (params: {
     customerId: params.customerId,
     relatedDepositId: params.relatedDepositId,
     relatedPenaltyId: params.relatedPenaltyId,
+    relatedDamageId: params.relatedDamageId,
     type: params.type,
     financeCategory: getFinanceCategory(params.type),
     amount: params.amount,
     direction: params.direction,
+    channel: params.channel,
     operator: params.operator,
     operateTime: now,
     changeReason: params.changeReason,
@@ -218,9 +228,13 @@ export const splitRentalFinance = (
     packageDiscount?: number;
     couponDiscount?: number;
     deliveryFee?: number;
+    cleaningFee?: number;
+    packingFee?: number;
     penaltyAmount?: number;
     damageCompensation?: number;
+    lossCompensation?: number;
     depositForfeited?: number;
+    depositOffset?: number;
   } = {}
 ): RentalFinanceDetail => {
   const now = new Date().toISOString();
@@ -228,14 +242,18 @@ export const splitRentalFinance = (
     packageDiscount = 0,
     couponDiscount = 0,
     deliveryFee = 0,
+    cleaningFee = 0,
+    packingFee = 0,
     penaltyAmount = 0,
     damageCompensation = 0,
+    lossCompensation = 0,
     depositForfeited = 0,
+    depositOffset = 0,
   } = options;
 
   const baseRentalFee = rental.price;
   const totalDiscount = packageDiscount + couponDiscount;
-  const actualIncome = baseRentalFee - totalDiscount + deliveryFee + penaltyAmount + damageCompensation + depositForfeited;
+  const actualIncome = baseRentalFee - totalDiscount + deliveryFee + cleaningFee + packingFee + penaltyAmount + damageCompensation + lossCompensation + depositForfeited + depositOffset;
 
   return {
     id: generateId(),
@@ -245,9 +263,13 @@ export const splitRentalFinance = (
     packageDiscount,
     couponDiscount,
     deliveryFee,
+    cleaningFee,
+    packingFee,
     penaltyAmount,
     damageCompensation,
+    lossCompensation,
     depositForfeited,
+    depositOffset,
     actualIncome,
     totalDiscount,
     createdAt: now,
@@ -274,6 +296,243 @@ export const calculateCouponDiscount = (
 };
 
 export const getDirectionByType = (type: TransactionType): 'income' | 'expense' => {
-  const expenseTypes: TransactionType[] = ['deposit_refund', 'refund_rental'];
+  const expenseTypes: TransactionType[] = ['deposit_refund', 'refund_rental', 'package_discount', 'coupon_discount'];
   return expenseTypes.includes(type) ? 'expense' : 'income';
+};
+
+export const generateRentalIncomeFlows = (
+  rental: Rental,
+  operator: string = '系统'
+): FundFlowRecord[] => {
+  const flows: FundFlowRecord[] = [];
+  const channelLabel = rental.channel === 'individual' ? '散客' : rental.channel === 'group' ? '团建' : '线上渠道';
+  
+  if (rental.isPackage) {
+    flows.push(createFundFlowRecord({
+      rentalId: rental.id,
+      customerId: rental.customerId,
+      type: 'rental_fee',
+      amount: rental.price,
+      direction: 'income',
+      operator,
+      changeReason: `${channelLabel}套餐租赁收入 - 订单结算`,
+      channel: rental.channel,
+    }));
+  } else if (rental.originalRentalId) {
+    flows.push(createFundFlowRecord({
+      rentalId: rental.id,
+      customerId: rental.customerId,
+      type: 'rental_renewal_fee',
+      amount: rental.price,
+      direction: 'income',
+      operator,
+      changeReason: `${channelLabel}续租收入 - 租期延长`,
+      channel: rental.channel,
+    }));
+  } else {
+    flows.push(createFundFlowRecord({
+      rentalId: rental.id,
+      customerId: rental.customerId,
+      type: 'rental_fee',
+      amount: rental.price,
+      direction: 'income',
+      operator,
+      changeReason: `${channelLabel}租赁收入 - 订单结算`,
+      channel: rental.channel,
+    }));
+  }
+  
+  return flows;
+};
+
+export const generateDamageCompensationFlows = (
+  rentalId: string,
+  customerId: string,
+  damageId: string,
+  amount: number,
+  isFullLoss: boolean = false,
+  operator: string = '系统'
+): FundFlowRecord[] => {
+  const flows: FundFlowRecord[] = [];
+  
+  if (isFullLoss) {
+    flows.push(createFundFlowRecord({
+      rentalId,
+      customerId,
+      type: 'loss_compensation',
+      amount,
+      direction: 'income',
+      operator,
+      changeReason: '装备丢失全额赔款',
+      relatedDamageId: damageId,
+    }));
+  } else {
+    flows.push(createFundFlowRecord({
+      rentalId,
+      customerId,
+      type: 'damage_compensation',
+      amount,
+      direction: 'income',
+      operator,
+      changeReason: '损耗登记确认赔付',
+      relatedDamageId: damageId,
+    }));
+  }
+  
+  return flows;
+};
+
+export const generatePenaltyFlows = (
+  rental: Rental,
+  penalty: RentalPenalty,
+  operator: string = '系统'
+): FundFlowRecord[] => {
+  const flows: FundFlowRecord[] = [];
+  const channelLabel = rental.channel === 'individual' ? '散客' : rental.channel === 'group' ? '团建' : '线上渠道';
+  
+  flows.push(createFundFlowRecord({
+    rentalId: rental.id,
+    customerId: rental.customerId,
+    type: 'penalty',
+    amount: penalty.adjustedAmount,
+    direction: 'income',
+    operator,
+    changeReason: `${channelLabel}租赁超期结算 - 逾期${penalty.overdueDays}天产生罚金`,
+    relatedPenaltyId: penalty.id,
+    channel: rental.channel,
+  }));
+  
+  return flows;
+};
+
+export const generateDepositOffsetFlows = (
+  rentalId: string,
+  customerId: string,
+  depositId: string,
+  amount: number,
+  offsetType: 'rental' | 'damage' | 'penalty',
+  operator: string = '系统'
+): FundFlowRecord[] => {
+  const flows: FundFlowRecord[] = [];
+  
+  const reasonMap = {
+    rental: '客户押金抵扣租金',
+    damage: '客户押金抵扣损坏赔偿',
+    penalty: '客户押金抵扣逾期违约金',
+  };
+  
+  flows.push(createFundFlowRecord({
+    rentalId,
+    customerId,
+    type: 'deposit_offset',
+    amount,
+    direction: 'income',
+    operator,
+    changeReason: `${reasonMap[offsetType]} - 往来冲抵流水`,
+    relatedDepositId: depositId,
+  }));
+  
+  return flows;
+};
+
+export const generateValueAddedServiceFlows = (
+  rental: Rental,
+  options: {
+    deliveryFee?: number;
+    cleaningFee?: number;
+    packingFee?: number;
+  },
+  operator: string = '系统'
+): FundFlowRecord[] => {
+  const flows: FundFlowRecord[] = [];
+  const { deliveryFee = 0, cleaningFee = 0, packingFee = 0 } = options;
+  
+  if (deliveryFee > 0) {
+    flows.push(createFundFlowRecord({
+      rentalId: rental.id,
+      customerId: rental.customerId,
+      type: 'delivery_fee',
+      amount: deliveryFee,
+      direction: 'income',
+      operator,
+      changeReason: '增值服务费 - 配送费',
+      channel: rental.channel,
+    }));
+  }
+  
+  if (cleaningFee > 0) {
+    flows.push(createFundFlowRecord({
+      rentalId: rental.id,
+      customerId: rental.customerId,
+      type: 'cleaning_fee',
+      amount: cleaningFee,
+      direction: 'income',
+      operator,
+      changeReason: '增值服务费 - 清洁费',
+      channel: rental.channel,
+    }));
+  }
+  
+  if (packingFee > 0) {
+    flows.push(createFundFlowRecord({
+      rentalId: rental.id,
+      customerId: rental.customerId,
+      type: 'packing_fee',
+      amount: packingFee,
+      direction: 'income',
+      operator,
+      changeReason: '增值服务费 - 装备打包服务费',
+      channel: rental.channel,
+    }));
+  }
+  
+  return flows;
+};
+
+export const generateAllIncomeFlows = (
+  rental: Rental,
+  options: {
+    penalty?: RentalPenalty;
+    damageCompensation?: { damageId: string; amount: number; isFullLoss: boolean };
+    depositOffset?: { depositId: string; amount: number; offsetType: 'rental' | 'damage' | 'penalty' };
+    valueAddedServices?: { deliveryFee?: number; cleaningFee?: number; packingFee?: number };
+    operator?: string;
+  } = {}
+): FundFlowRecord[] => {
+  const flows: FundFlowRecord[] = [];
+  const { penalty, damageCompensation, depositOffset, valueAddedServices, operator = '系统' } = options;
+  
+  flows.push(...generateRentalIncomeFlows(rental, operator));
+  
+  if (penalty && penalty.adjustedAmount > 0) {
+    flows.push(...generatePenaltyFlows(rental, penalty, operator));
+  }
+  
+  if (damageCompensation && damageCompensation.amount > 0) {
+    flows.push(...generateDamageCompensationFlows(
+      rental.id,
+      rental.customerId,
+      damageCompensation.damageId,
+      damageCompensation.amount,
+      damageCompensation.isFullLoss,
+      operator
+    ));
+  }
+  
+  if (depositOffset && depositOffset.amount > 0) {
+    flows.push(...generateDepositOffsetFlows(
+      rental.id,
+      rental.customerId,
+      depositOffset.depositId,
+      depositOffset.amount,
+      depositOffset.offsetType,
+      operator
+    ));
+  }
+  
+  if (valueAddedServices) {
+    flows.push(...generateValueAddedServiceFlows(rental, valueAddedServices, operator));
+  }
+  
+  return flows;
 };
