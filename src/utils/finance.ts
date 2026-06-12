@@ -255,7 +255,9 @@ export const splitRentalFinance = (
 
   const baseRentalFee = rental.price;
   const totalDiscount = packageDiscount + couponDiscount;
-  const actualIncome = baseRentalFee - totalDiscount + deliveryFee + cleaningFee + packingFee + penaltyAmount + damageCompensation + lossCompensation + depositForfeited + depositOffset;
+  const totalReceivable = penaltyAmount + damageCompensation + lossCompensation + deliveryFee + cleaningFee + packingFee + baseRentalFee;
+  const totalDeduction = packageDiscount + couponDiscount + depositOffset;
+  const actualIncome = totalReceivable - totalDeduction;
 
   return {
     id: generateId(),
@@ -272,6 +274,8 @@ export const splitRentalFinance = (
     lossCompensation,
     depositForfeited,
     depositOffset,
+    totalReceivable,
+    totalDeduction,
     actualIncome,
     totalDiscount,
     createdAt: now,

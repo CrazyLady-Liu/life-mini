@@ -635,6 +635,8 @@ export const useAppStore = create<AppState>()(
             }
             
             if (existingFinanceDetail) {
+              const totalReceivable = finalPenaltyAmount + damageCompensation + lossCompensation + deliveryFee + cleaningFee + packingFee + rental.price;
+              const totalDeduction = packageDiscount + couponDiscount + depositOffset;
               updatedFinanceDetail = {
                 ...existingFinanceDetail,
                 penaltyAmount: finalPenaltyAmount,
@@ -648,7 +650,9 @@ export const useAppStore = create<AppState>()(
                 depositForfeited: settlement.forfeitAmount,
                 depositOffset,
                 totalDiscount: packageDiscount + couponDiscount,
-                actualIncome: rental.price - packageDiscount - couponDiscount + deliveryFee + cleaningFee + packingFee + finalPenaltyAmount + damageCompensation + lossCompensation + settlement.forfeitAmount + depositOffset,
+                totalReceivable,
+                totalDeduction,
+                actualIncome: totalReceivable - totalDeduction,
                 updatedAt: now,
               };
             }
@@ -876,11 +880,34 @@ export const useAppStore = create<AppState>()(
             operator
           );
           
+          let updatedFinanceDetail = state.rentalFinanceDetails;
+          if (rentalId !== 'N/A') {
+            const existingFinanceDetail = state.rentalFinanceDetails.find(
+              (d) => d.rentalId === rentalId
+            );
+            if (existingFinanceDetail) {
+              const newDamageCompensation = existingFinanceDetail.damageCompensation + amount;
+              const newTotalReceivable = existingFinanceDetail.totalReceivable + amount;
+              updatedFinanceDetail = state.rentalFinanceDetails.map((d) =>
+                d.id === existingFinanceDetail.id
+                  ? {
+                      ...d,
+                      damageCompensation: newDamageCompensation,
+                      totalReceivable: newTotalReceivable,
+                      actualIncome: newTotalReceivable - d.totalDeduction,
+                      updatedAt: now,
+                    }
+                  : d
+              );
+            }
+          }
+          
           return {
             damageRecords: state.damageRecords.map((d) =>
               d.id === damageId ? updatedDamageRecord : d
             ),
             fundFlowRecords: [...state.fundFlowRecords, ...newFlows],
+            rentalFinanceDetails: updatedFinanceDetail,
           };
         });
       },
@@ -925,12 +952,35 @@ export const useAppStore = create<AppState>()(
             operator
           );
           
+          let updatedFinanceDetail = state.rentalFinanceDetails;
+          if (rentalId !== 'N/A') {
+            const existingFinanceDetail = state.rentalFinanceDetails.find(
+              (d) => d.rentalId === rentalId
+            );
+            if (existingFinanceDetail) {
+              const newLossCompensation = existingFinanceDetail.lossCompensation + amount;
+              const newTotalReceivable = existingFinanceDetail.totalReceivable + amount;
+              updatedFinanceDetail = state.rentalFinanceDetails.map((d) =>
+                d.id === existingFinanceDetail.id
+                  ? {
+                      ...d,
+                      lossCompensation: newLossCompensation,
+                      totalReceivable: newTotalReceivable,
+                      actualIncome: newTotalReceivable - d.totalDeduction,
+                      updatedAt: now,
+                    }
+                  : d
+              );
+            }
+          }
+          
           return {
             damageRecords: state.damageRecords.map((d) =>
               d.id === damageId ? updatedDamageRecord : d
             ),
             equipments: updatedEquipments,
             fundFlowRecords: [...state.fundFlowRecords, ...newFlows],
+            rentalFinanceDetails: updatedFinanceDetail,
           };
         });
       },
@@ -976,7 +1026,8 @@ export const useAppStore = create<AppState>()(
                 ? {
                     ...d,
                     depositOffset: d.depositOffset + amount,
-                    actualIncome: d.actualIncome + amount,
+                    totalDeduction: d.totalDeduction + amount,
+                    actualIncome: d.totalReceivable - (d.totalDeduction + amount),
                     updatedAt: now,
                   }
                 : d

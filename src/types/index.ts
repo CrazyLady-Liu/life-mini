@@ -329,6 +329,8 @@ export interface RentalFinanceDetail {
   depositForfeited: number;
   depositOffset: number;
   
+  totalReceivable: number;
+  totalDeduction: number;
   actualIncome: number;
   totalDiscount: number;
   

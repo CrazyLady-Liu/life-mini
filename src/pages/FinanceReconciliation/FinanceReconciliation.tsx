@@ -65,6 +65,18 @@ export default function FinanceReconciliation() {
 
   const netIncome = totalIncome - totalExpense;
 
+  const totalReceivable = useMemo(() => {
+    return rentalFinanceDetails.reduce((sum, d) => sum + d.totalReceivable, 0);
+  }, [rentalFinanceDetails]);
+
+  const totalDeduction = useMemo(() => {
+    return rentalFinanceDetails.reduce((sum, d) => sum + d.totalDeduction, 0);
+  }, [rentalFinanceDetails]);
+
+  const totalActualIncome = useMemo(() => {
+    return rentalFinanceDetails.reduce((sum, d) => sum + d.actualIncome, 0);
+  }, [rentalFinanceDetails]);
+
   const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name || '未知';
   const getEquipmentName = (rentalId: string) => {
     const rental = rentals.find((r) => r.id === rentalId);
@@ -109,7 +121,7 @@ export default function FinanceReconciliation() {
   };
 
   const handleExportFinanceDetail = () => {
-    const headers = ['租赁单号', '客户', '装备', '单品租金收入', '套餐优惠抵扣', '优惠券减免', '配送费', '清洁费', '打包费', '逾期罚金', '损坏赔偿', '丢失赔款', '押金扣款收入', '押金抵扣', '优惠合计', '实际收入', '结算状态'];
+    const headers = ['租赁单号', '客户', '装备', '单品租金收入', '配送费', '清洁费', '打包费', '逾期罚金', '损坏赔偿', '丢失赔款', '总应收金额', '套餐优惠抵扣', '优惠券减免', '押金抵扣', '总抵扣金额', '押金扣款收入', '优惠合计', '实际收入', '结算状态'];
     const rows = rentalFinanceDetails.map((detail) => {
       const rental = rentals.find((r) => r.id === detail.rentalId);
       return [
@@ -117,16 +129,18 @@ export default function FinanceReconciliation() {
         getCustomerName(detail.customerId),
         getEquipmentName(detail.rentalId),
         detail.baseRentalFee.toString(),
-        detail.packageDiscount.toString(),
-        detail.couponDiscount.toString(),
         detail.deliveryFee.toString(),
         detail.cleaningFee.toString(),
         detail.packingFee.toString(),
         detail.penaltyAmount.toString(),
         detail.damageCompensation.toString(),
         detail.lossCompensation.toString(),
-        detail.depositForfeited.toString(),
+        detail.totalReceivable.toString(),
+        detail.packageDiscount.toString(),
+        detail.couponDiscount.toString(),
         detail.depositOffset.toString(),
+        detail.totalDeduction.toString(),
+        detail.depositForfeited.toString(),
         detail.totalDiscount.toString(),
         detail.actualIncome.toString(),
         rental?.status === 'returned' ? '已结算' : '进行中',
@@ -167,7 +181,7 @@ export default function FinanceReconciliation() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
@@ -192,13 +206,35 @@ export default function FinanceReconciliation() {
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+              <ArrowRightLeft className="w-6 h-6 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">总应收</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(totalReceivable)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+              <Users className="w-6 h-6 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">总抵扣</p>
+              <p className="text-2xl font-bold text-purple-600 mt-1">{formatCurrency(totalDeduction)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
               <PieChart className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">净收入</p>
-              <p className={`text-2xl font-bold mt-1 ${netIncome >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {netIncome >= 0 ? '+' : ''}{formatCurrency(netIncome)}
+              <p className="text-sm text-gray-500">实际收入合计</p>
+              <p className={`text-2xl font-bold mt-1 ${totalActualIncome >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {totalActualIncome >= 0 ? '+' : ''}{formatCurrency(totalActualIncome)}
               </p>
             </div>
           </div>
