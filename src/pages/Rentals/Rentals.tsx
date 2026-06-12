@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, CreditCard, PieChart, ArrowRightLeft, FileText, Download, RefreshCw } from 'lucide-react';
+import { Plus, Search, CheckCircle, Calendar, Package, User, Wallet, AlertTriangle, Receipt, ChevronDown, ChevronUp, CreditCard, PieChart, ArrowRightLeft, FileText, Download, RefreshCw, BookOpen, SplitSquareHorizontal, Info } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import StatusBadge from '@/components/StatusBadge';
 import Button from '@/components/Button';
 import Modal from '@/components/Modal';
-import { formatCurrency, formatDate, formatDateTime, depositStatusLabels, transactionTypeLabels, financeCategoryLabels, customerChannelLabels } from '@/utils/format';
+import { formatCurrency, formatDate, formatDateTime, depositStatusLabels, transactionTypeLabels, financeCategoryLabels, customerChannelLabels, depositFlowTypeLabels, depositFlowTypeColors } from '@/utils/format';
 import type { CustomerChannel } from '@/types';
 import { exportVoucherHTML } from '@/utils/export';
 import type { Rental } from '@/types';
@@ -27,6 +27,7 @@ export default function RentalsPage() {
     issueVoucher,
     calculateRentalDeposit: calcDeposit,
     calculateRentalPenalty: calcPenalty,
+    getDepositFundFlowsByRentalId,
   } = useAppStore();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,7 +36,7 @@ export default function RentalsPage() {
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [selectedRental, setSelectedRental] = useState<Rental | null>(null);
   const [expandedRentalId, setExpandedRentalId] = useState<string | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'finance' | 'flows' | 'vouchers'>('finance');
+  const [activeDetailTab, setActiveDetailTab] = useState<'finance' | 'flows' | 'vouchers' | 'deposit'>('finance');
   const [formData, setFormData] = useState({
     equipmentId: '',
     customerId: '',
@@ -294,6 +295,7 @@ export default function RentalsPage() {
             const financeDetail = getFinanceDetailByRentalId(rental.id);
             const fundFlows = getFundFlowsByRentalId(rental.id);
             const vouchers = getVouchersByRentalId(rental.id);
+            const depositFlows = getDepositFundFlowsByRentalId(rental.id);
             const isExpanded = expandedRentalId === rental.id;
             const depositAmount = depositRecord?.totalDepositAmount || 0;
 
@@ -448,6 +450,20 @@ export default function RentalsPage() {
                           凭证
                           <span className="bg-gray-200 text-gray-600 text-xs px-1.5 py-0.5 rounded-full">
                             {vouchers.length}
+                          </span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveDetailTab('deposit'); }}
+                          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            activeDetailTab === 'deposit'
+                              ? 'border-emerald-500 text-emerald-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <BookOpen className="w-4 h-4" />
+                          押金流水
+                          <span className="bg-amber-100 text-amber-700 text-xs px-1.5 py-0.5 rounded-full">
+                            {depositFlows.length}
                           </span>
                         </button>
                       </div>
@@ -838,6 +854,119 @@ export default function RentalsPage() {
                             <div className="py-12 text-center">
                               <p className="text-gray-500 text-sm">暂无凭证记录</p>
                               <p className="text-gray-400 text-xs mt-1">点击上方按钮开具财务凭证</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {activeDetailTab === 'deposit' && (
+                        <div className="space-y-4">
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                            <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <h5 className="font-semibold text-amber-800 text-sm">押金流水说明</h5>
+                              <p className="text-xs text-amber-700 mt-1">
+                                以下押金流水均为「往来款」，不计入经营收入/成本，独立台账管理，避免财务数据虚高。
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="bg-white rounded-lg p-3 border border-gray-100">
+                              <p className="text-xs text-gray-500">押金预收</p>
+                              <p className="text-lg font-bold text-amber-600 mt-1">
+                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_collect').reduce((s, f) => s + f.amount, 0))}
+                              </p>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-gray-100">
+                              <p className="text-xs text-gray-500">全额退还</p>
+                              <p className="text-lg font-bold text-emerald-600 mt-1">
+                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_refund_full').reduce((s, f) => s + f.amount, 0))}
+                              </p>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-gray-100">
+                              <p className="text-xs text-gray-500">部分抵扣</p>
+                              <p className="text-lg font-bold text-rose-600 mt-1">
+                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_offset').reduce((s, f) => s + f.amount, 0))}
+                              </p>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-gray-100">
+                              <p className="text-xs text-gray-500">部分退还</p>
+                              <p className="text-lg font-bold text-blue-600 mt-1">
+                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_refund_partial').reduce((s, f) => s + f.amount, 0))}
+                              </p>
+                            </div>
+                          </div>
+
+                          {depositFlows.length > 0 ? (
+                            <div className="space-y-3">
+                              {depositFlows.map((flow) => {
+                                const colorInfo = depositFlowTypeColors[flow.type] || { bg: 'bg-gray-100', text: 'text-gray-700' };
+                                return (
+                                  <div key={flow.id} className="bg-white rounded-lg p-4 border border-gray-100">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="flex items-start gap-3">
+                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                                          flow.type === 'deposit_collect' ? 'bg-amber-100' :
+                                          flow.type === 'deposit_refund_full' ? 'bg-emerald-100' :
+                                          flow.type === 'deposit_refund_partial' ? 'bg-blue-100' :
+                                          'bg-rose-100'
+                                        }`}>
+                                          {flow.type === 'deposit_collect' ? <Wallet className="w-5 h-5 text-amber-600" /> :
+                                           flow.type === 'deposit_refund_full' ? <BookOpen className="w-5 h-5 text-emerald-600" /> :
+                                           flow.type === 'deposit_refund_partial' ? <SplitSquareHorizontal className="w-5 h-5 text-blue-600" /> :
+                                           <AlertTriangle className="w-5 h-5 text-rose-600" />}
+                                        </div>
+                                        <div>
+                                          <div className="flex items-center gap-2">
+                                            <h5 className="font-medium text-gray-900">
+                                              {depositFlowTypeLabels[flow.type]}
+                                            </h5>
+                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${colorInfo.bg} ${colorInfo.text}`}>
+                                              往来款
+                                            </span>
+                                          </div>
+                                          <p className="text-sm text-gray-600 mt-0.5">{flow.changeReason}</p>
+                                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                                            <span>流水号：{flow.flowNo}</span>
+                                            <span>操作人：{flow.operator}</span>
+                                            <span>{formatDateTime(flow.operateTime)}</span>
+                                          </div>
+                                          {(flow.offsetAmount !== undefined || flow.refundAmount !== undefined) && (
+                                            <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                                              {flow.offsetAmount !== undefined && (
+                                                <span>抵扣金额：{formatCurrency(flow.offsetAmount)}</span>
+                                              )}
+                                              {flow.refundAmount !== undefined && (
+                                                <span>退还金额：{formatCurrency(flow.refundAmount)}</span>
+                                              )}
+                                            </div>
+                                          )}
+                                          {flow.remark && (
+                                            <div className="mt-2 flex items-start gap-1">
+                                              <Info className="w-3 h-3 text-gray-400 flex-shrink-0 mt-0.5" />
+                                              <p className="text-xs text-gray-500">{flow.remark}</p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <p className={`text-lg font-bold ${
+                                          flow.direction === 'income' ? 'text-amber-600' : 'text-emerald-600'
+                                        }`}>
+                                          {flow.direction === 'income' ? '+' : '-'}{formatCurrency(flow.amount)}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="py-12 text-center">
+                              <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                              <p className="text-gray-500 text-sm">暂无押金资金流水</p>
+                              <p className="text-gray-400 text-xs mt-1">收取押金或归还装备时将自动生成押金流水记录</p>
                             </div>
                           )}
                         </div>

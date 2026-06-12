@@ -34,6 +34,8 @@ import type {
   FundFlowOperationType,
   AddEquipmentInput,
   AddDamageRecordInput,
+  DepositFundFlow,
+  DepositFlowType,
 } from '../types';
 import {
   mockEquipments,
@@ -69,6 +71,9 @@ import {
   generateIdempotencyKey,
   createIdempotencyRecord,
   checkIdempotency,
+  generateDepositCollectFlow,
+  generateDepositRefundFullFlow,
+  generateDepositRefundPartialFlow,
 } from '../utils/finance';
 
 interface AppState {
@@ -89,6 +94,7 @@ interface AppState {
   depositExemptCustomers: DepositExemptCustomer[];
   rentalFinanceDetails: RentalFinanceDetail[];
   fundFlowRecords: FundFlowRecord[];
+  depositFundFlows: DepositFundFlow[];
   customerCoupons: CustomerCoupon[];
   financeVouchers: FinanceVoucher[];
   
@@ -181,6 +187,10 @@ interface AppState {
   fundFlowIdempotencyKeys: FundFlowIdempotencyKey[];
   checkFundFlowIdempotency: (rentalId: string, operationType: FundFlowOperationType) => { isDuplicate: boolean; record?: FundFlowIdempotencyKey };
   addFundFlowIdempotencyKey: (rentalId: string, operationType: FundFlowOperationType, flowIds: string[], operator: string) => void;
+  
+  getDepositFundFlowsByRentalId: (rentalId: string) => DepositFundFlow[];
+  getDepositFundFlowsByType: (type: DepositFlowType) => DepositFundFlow[];
+  addDepositFundFlows: (flows: DepositFundFlow[]) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -203,6 +213,7 @@ export const useAppStore = create<AppState>()(
       depositExemptCustomers: mockDepositExemptCustomers,
       rentalFinanceDetails: [],
       fundFlowRecords: [],
+      depositFundFlows: [],
       customerCoupons: [],
       financeVouchers: [],
       fundFlowIdempotencyKeys: [],
@@ -463,10 +474,11 @@ export const useAppStore = create<AppState>()(
           let newFundFlows: FundFlowRecord[] = [];
           let updatedFinanceDetail: RentalFinanceDetail | null = null;
           let newIdempotencyKeys: FundFlowIdempotencyKey[] = [];
+          let finalPenaltyAmount = penaltyAmount || 0;
           
           if (equipment && depositRecord && !depositRecord.isExempt) {
             const calculatedPenalty = calculatePenalty(rental, equipment, state.penaltyRules);
-            const finalPenaltyAmount = penaltyAmount !== undefined ? penaltyAmount : (calculatedPenalty?.totalPenalty || 0);
+            finalPenaltyAmount = penaltyAmount !== undefined ? penaltyAmount : (calculatedPenalty?.totalPenalty || 0);
             
             if (calculatedPenalty && finalPenaltyAmount > 0) {
               const isAdjusted = penaltyAmount !== undefined && penaltyAmount !== calculatedPenalty.totalPenalty;
@@ -664,6 +676,36 @@ export const useAppStore = create<AppState>()(
             );
           }
           
+          let newDepositFundFlows: DepositFundFlow[] = [];
+          if (depositRecord && !depositRecord.isExempt && depositRecord.collectedAmount > 0) {
+            const collected = depositRecord.collectedAmount || depositRecord.totalDepositAmount;
+            const totalDeductionAmount = finalPenaltyAmount + damageCompensation + lossCompensation;
+            if (totalDeductionAmount <= 0) {
+              newDepositFundFlows.push(generateDepositRefundFullFlow(
+                id,
+                rental.customerId,
+                rental.equipmentId,
+                depositRecord.id,
+                collected,
+                operator
+              ));
+            } else {
+              const offsetAmt = Math.min(totalDeductionAmount, collected);
+              const refundAmt = collected - offsetAmt;
+              newDepositFundFlows.push(...generateDepositRefundPartialFlow(
+                id,
+                rental.customerId,
+                rental.equipmentId,
+                depositRecord.id,
+                collected,
+                offsetAmt,
+                refundAmt,
+                damageId || undefined,
+                operator
+              ));
+            }
+          }
+          
           let updatedCoupons = state.customerCoupons;
           if (couponId) {
             updatedCoupons = state.customerCoupons.map((c) =>
@@ -681,6 +723,7 @@ export const useAppStore = create<AppState>()(
               : state.rentalPenalties,
             fundFlowRecords: [...state.fundFlowRecords, ...newFundFlows],
             fundFlowIdempotencyKeys: [...state.fundFlowIdempotencyKeys, ...newIdempotencyKeys],
+            depositFundFlows: [...state.depositFundFlows, ...newDepositFundFlows],
             rentalFinanceDetails: updatedFinanceDetail
               ? state.rentalFinanceDetails.map((d) => d.id === updatedFinanceDetail!.id ? updatedFinanceDetail! : d)
               : state.rentalFinanceDetails,
@@ -1269,12 +1312,23 @@ export const useAppStore = create<AppState>()(
             operator,
             createdAt: now,
           };
+
+          const rental = state.rentals.find((r) => r.id === rentalId);
+          const depositCollectFlow = generateDepositCollectFlow(
+            rentalId,
+            depositRecord.customerId,
+            depositRecord.equipmentId,
+            depositRecord.id,
+            collectAmount,
+            operator
+          );
           
           return {
             depositRecords: state.depositRecords.map((d) =>
               d.id === depositRecord.id ? updatedRecord : d
             ),
             financialTransactions: [...state.financialTransactions, transaction],
+            depositFundFlows: [...state.depositFundFlows, depositCollectFlow],
           };
         });
       },
@@ -1549,6 +1603,20 @@ export const useAppStore = create<AppState>()(
         const idempotencyRecord = createIdempotencyRecord(rentalId, operationType, flowIds, operator);
         set((state) => ({
           fundFlowIdempotencyKeys: [...state.fundFlowIdempotencyKeys, idempotencyRecord],
+        }));
+      },
+      
+      getDepositFundFlowsByRentalId: (rentalId) => {
+        return get().depositFundFlows.filter((f) => f.rentalId === rentalId);
+      },
+      
+      getDepositFundFlowsByType: (type) => {
+        return get().depositFundFlows.filter((f) => f.type === type);
+      },
+      
+      addDepositFundFlows: (flows) => {
+        set((state) => ({
+          depositFundFlows: [...state.depositFundFlows, ...flows],
         }));
       },
     }),

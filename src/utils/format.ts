@@ -155,3 +155,17 @@ export const voucherStatusLabels: Record<string, string> = {
   issued: '已开票',
   cancelled: '已作废',
 };
+
+export const depositFlowTypeLabels: Record<string, string> = {
+  deposit_collect: '押金预收',
+  deposit_refund_full: '押金全额退还',
+  deposit_refund_partial: '押金部分抵扣退还',
+  deposit_offset: '押金抵扣赔付',
+};
+
+export const depositFlowTypeColors: Record<string, { bg: string; text: string }> = {
+  deposit_collect: { bg: 'bg-amber-100', text: 'text-amber-700' },
+  deposit_refund_full: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  deposit_refund_partial: { bg: 'bg-blue-100', text: 'text-blue-700' },
+  deposit_offset: { bg: 'bg-rose-100', text: 'text-rose-700' },
+};

@@ -12,6 +12,8 @@ export type DepositStatus = 'pending' | 'collected' | 'refunded_full' | 'refunde
 
 export type DepositRuleType = 'category' | 'equipment' | 'package';
 
+export type DepositFlowType = 'deposit_collect' | 'deposit_refund_full' | 'deposit_refund_partial' | 'deposit_offset';
+
 export type CustomerChannel = 'individual' | 'group' | 'online';
 
 export type FundFlowOperationType = 'new_rental' | 'renewal' | 'settlement' | 'package_split' | 'damage_compensation' | 'loss_compensation' | 'penalty' | 'deposit_offset' | 'value_added_service';
@@ -397,5 +399,26 @@ export interface CustomerCoupon {
   isUsed: boolean;
   usedRentalId?: string;
   expireDate: string;
+  createdAt: string;
+}
+
+export interface DepositFundFlow {
+  id: string;
+  flowNo: string;
+  rentalId: string;
+  customerId: string;
+  equipmentId: string;
+  depositId: string;
+  type: DepositFlowType;
+  amount: number;
+  direction: 'income' | 'expense';
+  isCurrentAccount: true;
+  relatedDamageId?: string;
+  offsetAmount?: number;
+  refundAmount?: number;
+  operator: string;
+  operateTime: string;
+  changeReason: string;
+  remark?: string;
   createdAt: string;
 }

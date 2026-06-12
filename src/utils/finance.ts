@@ -16,6 +16,8 @@ import type {
   CustomerChannel,
   FundFlowOperationType,
   FundFlowIdempotencyKey,
+  DepositFundFlow,
+  DepositFlowType,
 } from '../types';
 import { highValueThreshold, generateId } from './format';
 
@@ -618,4 +620,145 @@ export const checkIdempotency = (
     isDuplicate: !!record,
     record,
   };
+};
+
+export const generateDepositFlowNo = (): string => {
+  const now = new Date();
+  const dateStr = now.getFullYear().toString() +
+    (now.getMonth() + 1).toString().padStart(2, '0') +
+    now.getDate().toString().padStart(2, '0');
+  const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
+  return `DPS${dateStr}${randomStr}`;
+};
+
+export const createDepositFundFlow = (params: {
+  rentalId: string;
+  customerId: string;
+  equipmentId: string;
+  depositId: string;
+  type: DepositFlowType;
+  amount: number;
+  direction: 'income' | 'expense';
+  operator: string;
+  changeReason: string;
+  relatedDamageId?: string;
+  offsetAmount?: number;
+  refundAmount?: number;
+  remark?: string;
+}): DepositFundFlow => {
+  const now = new Date().toISOString();
+  return {
+    id: generateId(),
+    flowNo: generateDepositFlowNo(),
+    rentalId: params.rentalId,
+    customerId: params.customerId,
+    equipmentId: params.equipmentId,
+    depositId: params.depositId,
+    type: params.type,
+    amount: params.amount,
+    direction: params.direction,
+    isCurrentAccount: true,
+    relatedDamageId: params.relatedDamageId,
+    offsetAmount: params.offsetAmount,
+    refundAmount: params.refundAmount,
+    operator: params.operator,
+    operateTime: now,
+    changeReason: params.changeReason,
+    remark: params.remark,
+    createdAt: now,
+  };
+};
+
+export const generateDepositCollectFlow = (
+  rentalId: string,
+  customerId: string,
+  equipmentId: string,
+  depositId: string,
+  amount: number,
+  operator: string = '系统'
+): DepositFundFlow => {
+  return createDepositFundFlow({
+    rentalId,
+    customerId,
+    equipmentId,
+    depositId,
+    type: 'deposit_collect',
+    amount,
+    direction: 'income',
+    operator,
+    changeReason: '客户租赁下单缴纳押金',
+    remark: '往来款-押金预收，不计入经营利润',
+  });
+};
+
+export const generateDepositRefundFullFlow = (
+  rentalId: string,
+  customerId: string,
+  equipmentId: string,
+  depositId: string,
+  amount: number,
+  operator: string = '系统'
+): DepositFundFlow => {
+  return createDepositFundFlow({
+    rentalId,
+    customerId,
+    equipmentId,
+    depositId,
+    type: 'deposit_refund_full',
+    amount,
+    direction: 'expense',
+    operator,
+    changeReason: '装备完好归还，原路全额退还押金',
+    refundAmount: amount,
+    remark: '往来款-押金全额退还，不计入经营利润',
+  });
+};
+
+export const generateDepositRefundPartialFlow = (
+  rentalId: string,
+  customerId: string,
+  equipmentId: string,
+  depositId: string,
+  totalDeposit: number,
+  offsetAmount: number,
+  refundAmount: number,
+  relatedDamageId?: string,
+  operator: string = '系统'
+): DepositFundFlow[] => {
+  const flows: DepositFundFlow[] = [];
+
+  flows.push(createDepositFundFlow({
+    rentalId,
+    customerId,
+    equipmentId,
+    depositId,
+    type: 'deposit_offset',
+    amount: offsetAmount,
+    direction: 'income',
+    operator,
+    changeReason: `出现损耗，押金抵扣赔付 ¥${offsetAmount.toFixed(2)}`,
+    relatedDamageId,
+    offsetAmount,
+    refundAmount,
+    remark: `往来款-押金部分抵扣，抵扣 ¥${offsetAmount.toFixed(2)}，不计入经营利润`,
+  }));
+
+  if (refundAmount > 0) {
+    flows.push(createDepositFundFlow({
+      rentalId,
+      customerId,
+      equipmentId,
+      depositId,
+      type: 'deposit_refund_partial',
+      amount: refundAmount,
+      direction: 'expense',
+      operator,
+      changeReason: `扣除赔付 ¥${offsetAmount.toFixed(2)} 后，剩余押金 ¥${refundAmount.toFixed(2)} 原路退还`,
+      offsetAmount,
+      refundAmount,
+      remark: `往来款-部分抵扣后退还余款，不计入经营利润`,
+    }));
+  }
+
+  return flows;
 };

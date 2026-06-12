@@ -13,6 +13,7 @@ import {
   Tent,
   Wallet,
   ArrowRightLeft,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,7 @@ const menuItems = [
     category: '运营管理',
     items: [
       { path: '/rentals', label: '租赁记录', icon: ClipboardList },
+      { path: '/deposit-ledger', label: '押金台账', icon: BookOpen },
       { path: '/usage-stats', label: '使用统计', icon: BarChart3 },
     ],
   },
