@@ -866,7 +866,9 @@ export default function RentalsPage() {
                             <div>
                               <h5 className="font-semibold text-amber-800 text-sm">押金流水说明</h5>
                               <p className="text-xs text-amber-700 mt-1">
-                                以下押金流水均为「往来款」，不计入经营收入/成本，独立台账管理，避免财务数据虚高。
+                                押金流水均为「往来款」：押金预收、退还不计入营收/成本。
+                                <br />
+                                <strong>重要</strong>：押金抵扣金额（赔付/违约金）对应的<strong>经营性收入</strong>已在财务对账→经营收入中独立记录，参与利润核算，避免营收虚高。
                               </p>
                             </div>
                           </div>
@@ -875,25 +877,25 @@ export default function RentalsPage() {
                             <div className="bg-white rounded-lg p-3 border border-gray-100">
                               <p className="text-xs text-gray-500">押金预收</p>
                               <p className="text-lg font-bold text-amber-600 mt-1">
-                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_collect').reduce((s, f) => s + f.amount, 0))}
+                                +{formatCurrency(depositFlows.filter(f => f.type === 'deposit_collect').reduce((s, f) => s + f.amount, 0))}
                               </p>
                             </div>
                             <div className="bg-white rounded-lg p-3 border border-gray-100">
                               <p className="text-xs text-gray-500">全额退还</p>
                               <p className="text-lg font-bold text-emerald-600 mt-1">
-                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_refund_full').reduce((s, f) => s + f.amount, 0))}
+                                -{formatCurrency(depositFlows.filter(f => f.type === 'deposit_refund_full').reduce((s, f) => s + f.amount, 0))}
                               </p>
                             </div>
                             <div className="bg-white rounded-lg p-3 border border-gray-100">
-                              <p className="text-xs text-gray-500">部分抵扣</p>
+                              <p className="text-xs text-gray-500">抵扣（已转经营收入）</p>
                               <p className="text-lg font-bold text-rose-600 mt-1">
-                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_offset').reduce((s, f) => s + f.amount, 0))}
+                                -{formatCurrency(depositFlows.filter(f => f.type === 'deposit_offset').reduce((s, f) => s + f.amount, 0))}
                               </p>
                             </div>
                             <div className="bg-white rounded-lg p-3 border border-gray-100">
                               <p className="text-xs text-gray-500">部分退还</p>
                               <p className="text-lg font-bold text-blue-600 mt-1">
-                                {formatCurrency(depositFlows.filter(f => f.type === 'deposit_refund_partial').reduce((s, f) => s + f.amount, 0))}
+                                -{formatCurrency(depositFlows.filter(f => f.type === 'deposit_refund_partial').reduce((s, f) => s + f.amount, 0))}
                               </p>
                             </div>
                           </div>

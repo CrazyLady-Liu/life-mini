@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, ArrowRightLeft, Download, FileText, Filter, PieChart, TrendingUp, TrendingDown, Users } from 'lucide-react';
+import { Search, ArrowRightLeft, Download, FileText, Filter, PieChart, TrendingUp, TrendingDown, Users, Wallet, AlertCircle, Target } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import Button from '@/components/Button';
 import { formatCurrency, formatDate, formatDateTime, transactionTypeLabels, financeCategoryLabels, voucherStatusLabels, customerChannelLabels } from '@/utils/format';
@@ -15,6 +15,7 @@ export default function FinanceReconciliation() {
     rentalFinanceDetails,
     issueVoucher,
     getVouchersByRentalId,
+    calculateOperatingProfit,
   } = useAppStore();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,6 +23,7 @@ export default function FinanceReconciliation() {
   const [categoryFilter, setCategoryFilter] = useState<FinanceCategory | ''>('');
   const [directionFilter, setDirectionFilter] = useState<'income' | 'expense' | ''>('');
   const [channelFilter, setChannelFilter] = useState<CustomerChannel | ''>('');
+  const [operatingFilter, setOperatingFilter] = useState<'all' | 'operating' | 'deposit'>('all');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
   const filteredFlows = useMemo(() => {
@@ -41,15 +43,19 @@ export default function FinanceReconciliation() {
         const matchesCategory = !categoryFilter || flow.financeCategory === categoryFilter;
         const matchesDirection = !directionFilter || flow.direction === directionFilter;
         const matchesChannel = !channelFilter || flow.channel === channelFilter;
+        const matchesOperating =
+          operatingFilter === 'all' ? true :
+          operatingFilter === 'operating' ? flow.isOperating :
+          !flow.isOperating;
         
         const flowDate = new Date(flow.createdAt);
         const matchesStartDate = !dateRange.start || flowDate >= new Date(dateRange.start);
         const matchesEndDate = !dateRange.end || flowDate <= new Date(dateRange.end + 'T23:59:59');
         
-        return matchesSearch && matchesType && matchesCategory && matchesDirection && matchesChannel && matchesStartDate && matchesEndDate;
+        return matchesSearch && matchesType && matchesCategory && matchesDirection && matchesChannel && matchesOperating && matchesStartDate && matchesEndDate;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [fundFlowRecords, rentals, customers, equipments, searchTerm, typeFilter, categoryFilter, directionFilter, channelFilter, dateRange]);
+  }, [fundFlowRecords, rentals, customers, equipments, searchTerm, typeFilter, categoryFilter, directionFilter, channelFilter, operatingFilter, dateRange]);
 
   const totalIncome = useMemo(() => {
     return filteredFlows
@@ -65,6 +71,30 @@ export default function FinanceReconciliation() {
 
   const netIncome = totalIncome - totalExpense;
 
+  const operatingStats = useMemo(() => {
+    let operatingIncome = 0;
+    let operatingExpense = 0;
+    filteredFlows.forEach((f) => {
+      if (f.isOperating) {
+        if (f.direction === 'income') operatingIncome += f.amount;
+        else operatingExpense += f.amount;
+      }
+    });
+    return { operatingIncome, operatingExpense, operatingProfit: operatingIncome - operatingExpense };
+  }, [filteredFlows]);
+
+  const depositStats = useMemo(() => {
+    let depositIncome = 0;
+    let depositExpense = 0;
+    filteredFlows.forEach((f) => {
+      if (!f.isOperating) {
+        if (f.direction === 'income') depositIncome += f.amount;
+        else depositExpense += f.amount;
+      }
+    });
+    return { depositIncome, depositExpense, depositBalance: depositIncome - depositExpense };
+  }, [filteredFlows]);
+
   const totalReceivable = useMemo(() => {
     return rentalFinanceDetails.reduce((sum, d) => sum + d.totalReceivable, 0);
   }, [rentalFinanceDetails]);
@@ -76,6 +106,8 @@ export default function FinanceReconciliation() {
   const totalActualIncome = useMemo(() => {
     return rentalFinanceDetails.reduce((sum, d) => sum + d.actualIncome, 0);
   }, [rentalFinanceDetails]);
+
+  const profit = calculateOperatingProfit();
 
   const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name || '未知';
   const getEquipmentName = (rentalId: string) => {
@@ -93,9 +125,10 @@ export default function FinanceReconciliation() {
   };
 
   const handleExportCSV = () => {
-    const headers = ['流水号', '交易类型', '财务分类', '金额', '方向', '渠道', '客户', '装备', '操作人', '操作时间', '变更原因', '凭证状态', '凭证号'];
+    const headers = ['流水号', '是否经营/往来款', '交易类型', '财务分类', '金额', '方向', '渠道', '客户', '装备', '操作人', '操作时间', '变更原因', '凭证状态', '凭证号'];
     const rows = filteredFlows.map((flow) => [
       flow.flowNo,
+      flow.isOperating ? '经营收入（参与利润）' : '往来款（押金类）',
       transactionTypeLabels[flow.type] || flow.type,
       financeCategoryLabels[flow.financeCategory] || flow.financeCategory,
       flow.amount.toString(),
@@ -181,37 +214,82 @@ export default function FinanceReconciliation() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3">
+        <AlertCircle className="w-6 h-6 text-emerald-600 flex-shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <h4 className="font-semibold text-emerald-800">营收统计说明</h4>
+          <p className="text-sm text-emerald-700 mt-1">
+            经营收入：租金、配送费、清洁费、打包费、逾期违约金、损坏/丢失赔付等 → <strong>参与利润核算</strong>
+            <br />
+            往来款：押金预收、押金退还、押金抵扣调整 → <strong>不参与经营利润</strong>，避免营收虚高
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-emerald-600">系统经营利润</p>
+          <p className={`text-xl font-bold ${profit.operatingProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+            {profit.operatingProfit >= 0 ? '+' : ''}{formatCurrency(profit.operatingProfit)}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl p-5 shadow-sm border-2 border-emerald-200">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-emerald-600" />
+              <Target className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">总收入</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(totalIncome)}</p>
+              <p className="text-sm text-gray-500">经营收入（参与利润）</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">+{formatCurrency(operatingStats.operatingIncome)}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-xl p-5 shadow-sm border-2 border-red-200">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
               <TrendingDown className="w-6 h-6 text-red-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">总支出</p>
-              <p className="text-2xl font-bold text-red-500 mt-1">{formatCurrency(totalExpense)}</p>
+              <p className="text-sm text-gray-500">经营支出</p>
+              <p className="text-2xl font-bold text-red-500 mt-1">-{formatCurrency(operatingStats.operatingExpense)}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border-2 border-blue-200">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+              <PieChart className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">经营利润</p>
+              <p className={`text-2xl font-bold mt-1 ${operatingStats.operatingProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {operatingStats.operatingProfit >= 0 ? '+' : ''}{formatCurrency(operatingStats.operatingProfit)}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+              <Wallet className="w-6 h-6 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">往来款-押金预收</p>
+              <p className="text-xl font-bold text-amber-600 mt-1">+{formatCurrency(depositStats.depositIncome)}</p>
             </div>
           </div>
         </div>
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
-              <ArrowRightLeft className="w-6 h-6 text-amber-600" />
+              <Wallet className="w-6 h-6 text-amber-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">总应收</p>
-              <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(totalReceivable)}</p>
+              <p className="text-sm text-gray-500">往来款-押金退还/抵扣</p>
+              <p className="text-xl font-bold text-amber-600 mt-1">-{formatCurrency(depositStats.depositExpense)}</p>
             </div>
           </div>
         </div>
@@ -221,8 +299,10 @@ export default function FinanceReconciliation() {
               <Users className="w-6 h-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">总抵扣</p>
-              <p className="text-2xl font-bold text-purple-600 mt-1">{formatCurrency(totalDeduction)}</p>
+              <p className="text-sm text-gray-500">往来款余额</p>
+              <p className={`text-xl font-bold mt-1 ${depositStats.depositBalance >= 0 ? 'text-purple-600' : 'text-red-500'}`}>
+                {depositStats.depositBalance >= 0 ? '+' : ''}{formatCurrency(depositStats.depositBalance)}
+              </p>
             </div>
           </div>
         </div>
@@ -232,10 +312,11 @@ export default function FinanceReconciliation() {
               <PieChart className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">实际收入合计</p>
-              <p className={`text-2xl font-bold mt-1 ${totalActualIncome >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {totalActualIncome >= 0 ? '+' : ''}{formatCurrency(totalActualIncome)}
+              <p className="text-sm text-gray-500">流水净额（含往来）</p>
+              <p className={`text-xl font-bold mt-1 ${netIncome >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                {netIncome >= 0 ? '+' : ''}{formatCurrency(netIncome)}
               </p>
+              <p className="text-xs text-gray-400">全部流水合计</p>
             </div>
           </div>
         </div>
@@ -247,7 +328,7 @@ export default function FinanceReconciliation() {
             <Filter className="w-4 h-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">筛选条件</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-8 gap-3">
             <div className="relative lg:col-span-2">
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -258,6 +339,15 @@ export default function FinanceReconciliation() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
               />
             </div>
+            <select
+              value={operatingFilter}
+              onChange={(e) => setOperatingFilter(e.target.value as 'all' | 'operating' | 'deposit')}
+              className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+            >
+              <option value="all">全部流水</option>
+              <option value="operating">仅经营流水（利润核算）</option>
+              <option value="deposit">仅往来款（押金类）</option>
+            </select>
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as TransactionType | '')}
@@ -319,6 +409,7 @@ export default function FinanceReconciliation() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">流水号</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">利润核算</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">交易类型</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">财务分类</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">渠道</th>
@@ -336,6 +427,17 @@ export default function FinanceReconciliation() {
                 <tr key={flow.id} className="hover:bg-gray-50">
                   <td className="py-3 px-4">
                     <span className="font-mono text-sm text-blue-600">{flow.flowNo}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    {flow.isOperating ? (
+                      <span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                        经营收入
+                      </span>
+                    ) : (
+                      <span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                        往来款
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm text-gray-800">
@@ -448,11 +550,23 @@ export default function FinanceReconciliation() {
         )}
 
         <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-sm text-gray-500">
-              共 {filteredFlows.length} 条流水记录
+              共 {filteredFlows.length} 条流水记录（经营 {filteredFlows.filter(f => f.isOperating).length} 条，往来款 {filteredFlows.filter(f => !f.isOperating).length} 条）
             </p>
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <span className="text-gray-500">
+                经营收入：<span className="font-semibold text-emerald-600">+{formatCurrency(operatingStats.operatingIncome)}</span>
+              </span>
+              <span className="text-gray-500">
+                经营支出：<span className="font-semibold text-red-500">-{formatCurrency(operatingStats.operatingExpense)}</span>
+              </span>
+              <span className="text-gray-500">
+                经营利润：<span className={`font-bold ${operatingStats.operatingProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {operatingStats.operatingProfit >= 0 ? '+' : ''}{formatCurrency(operatingStats.operatingProfit)}
+                </span>
+              </span>
+              <span className="text-gray-300">|</span>
               <span className="text-gray-500">
                 收入合计：<span className="font-semibold text-emerald-600">{formatCurrency(totalIncome)}</span>
               </span>

@@ -120,7 +120,9 @@ export default function DepositLedger() {
         <div>
           <h4 className="font-semibold text-amber-800">往来款说明</h4>
           <p className="text-sm text-amber-700 mt-1">
-            所有押金流水均标记为「往来款」，与经营性收入严格区分。押金预收不计入营收，退还/抵扣不计入成本，独立台账统计确保财务数据真实准确。
+            所有押金流水均为「往来款」：押金预收不计入营收，退还/抵扣不计入成本。
+            <br />
+            <strong>重要</strong>：押金抵扣金额（赔付/违约金等）对应的<strong>经营性收入</strong>已在<strong>财务对账→经营收入</strong>中独立记录并参与利润核算，此处仅展示押金资金本身的收支运动，确保营收不虚高。
           </p>
         </div>
       </div>
@@ -133,7 +135,7 @@ export default function DepositLedger() {
             </div>
             <div>
               <p className="text-sm text-gray-500">押金预收</p>
-              <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(stats.totalCollected)}</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">+{formatCurrency(stats.totalCollected)}</p>
               <p className="text-xs text-gray-400 mt-0.5">{collectCount} 笔</p>
             </div>
           </div>
@@ -145,7 +147,7 @@ export default function DepositLedger() {
             </div>
             <div>
               <p className="text-sm text-gray-500">全额退还</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(stats.totalRefundFull)}</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">-{formatCurrency(stats.totalRefundFull)}</p>
               <p className="text-xs text-gray-400 mt-0.5">{refundFullCount} 笔</p>
             </div>
           </div>
@@ -156,8 +158,8 @@ export default function DepositLedger() {
               <SplitSquareHorizontal className="w-6 h-6 text-rose-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">部分抵扣</p>
-              <p className="text-2xl font-bold text-rose-600 mt-1">{formatCurrency(stats.totalOffset)}</p>
+              <p className="text-sm text-gray-500">抵扣（已转经营收入）</p>
+              <p className="text-2xl font-bold text-rose-600 mt-1">-{formatCurrency(stats.totalOffset)}</p>
               <p className="text-xs text-gray-400 mt-0.5">{offsetCount} 笔抵扣 / {refundPartialCount} 笔退还</p>
             </div>
           </div>
@@ -170,7 +172,7 @@ export default function DepositLedger() {
             <div>
               <p className="text-sm text-gray-500">往来款余额</p>
               <p className={`text-2xl font-bold mt-1 ${stats.currentBalance >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
-                {formatCurrency(stats.currentBalance)}
+                {stats.currentBalance >= 0 ? '+' : ''}{formatCurrency(stats.currentBalance)}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">预收 - 退还/抵扣</p>
             </div>
@@ -355,7 +357,7 @@ export default function DepositLedger() {
               <h4 className="font-medium text-amber-800">押金预收流水</h4>
             </div>
             <p className="text-sm text-amber-700">
-              客户租赁下单时缴纳押金，记为往来款收入，不作为经营性收入计入利润。
+              客户租赁下单时缴纳押金，记为往来款收入，<strong>不作为经营性收入</strong>计入利润。
             </p>
           </div>
           <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-100">
@@ -364,7 +366,7 @@ export default function DepositLedger() {
               <h4 className="font-medium text-emerald-800">押金全额退还流水</h4>
             </div>
             <p className="text-sm text-emerald-700">
-              装备完好归还时，原路全额退还押金，记为往来款支出，不影响经营成本。
+              装备完好归还时，原路全额退还押金，记为往来款支出，<strong>不影响经营成本</strong>。
             </p>
           </div>
           <div className="p-4 bg-rose-50 rounded-lg border border-rose-100">
@@ -373,7 +375,7 @@ export default function DepositLedger() {
               <h4 className="font-medium text-rose-800">押金部分抵扣流水</h4>
             </div>
             <p className="text-sm text-rose-700">
-              出现损耗时，部分押金抵扣赔付，剩余金额退还。抵扣和退还均属往来款，不计入经营利润。
+              出现损耗时：抵扣部分（赔付/违约金）<strong>对应的经营性收入已在财务对账独立记录并参与利润核算</strong>，此处仅记录往来款余额减少；剩余退还部分记为往来款支出。
             </p>
           </div>
         </div>

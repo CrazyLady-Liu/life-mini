@@ -189,6 +189,27 @@ export const getFinanceCategory = (type: TransactionType): FinanceCategory => {
   return categoryMap[type] || 'other';
 };
 
+export const isOperatingIncome = (type: TransactionType): boolean => {
+  const operatingTypes: TransactionType[] = [
+    'rental_fee',
+    'rental_renewal_fee',
+    'penalty',
+    'damage_compensation',
+    'loss_compensation',
+    'delivery_fee',
+    'cleaning_fee',
+    'packing_fee',
+    'refund_rental',
+  ];
+  return operatingTypes.includes(type);
+};
+
+export const isDepositRelated = (type: TransactionType): boolean => {
+  const depositTypes: TransactionType[] = [
+    'deposit_collect', 'deposit_refund', 'deposit_forfeit', 'deposit_offset'];
+  return depositTypes.includes(type);
+};
+
 export const createFundFlowRecord = (params: {
   rentalId: string;
   customerId: string;
@@ -214,6 +235,7 @@ export const createFundFlowRecord = (params: {
     relatedDamageId: params.relatedDamageId,
     type: params.type,
     financeCategory: getFinanceCategory(params.type),
+    isOperating: isOperatingIncome(params.type),
     amount: params.amount,
     direction: params.direction,
     channel: params.channel,
@@ -451,20 +473,21 @@ export const generateDepositOffsetFlows = (
   const flows: FundFlowRecord[] = [];
   
   const reasonMap = {
-    rental: '客户押金抵扣租金',
-    damage: '客户押金抵扣损坏赔偿',
-    penalty: '客户押金抵扣逾期违约金',
+    rental: '租金',
+    damage: '损坏/丢失赔付',
+    penalty: '逾期违约金',
   };
-  
+
   flows.push(createFundFlowRecord({
     rentalId,
     customerId,
     type: 'deposit_offset',
     amount,
-    direction: 'income',
+    direction: 'expense',
     operator,
-    changeReason: `${reasonMap[offsetType]} - 往来冲抵流水`,
+    changeReason: `押金预收转抵${reasonMap[offsetType]} - 往来款内部调整，不计入经营利润`,
     relatedDepositId: depositId,
+    remark: '往来款转出：押金预收余额减少，对应经营性收入已独立记录',
   }));
   
   return flows;
@@ -734,13 +757,13 @@ export const generateDepositRefundPartialFlow = (
     depositId,
     type: 'deposit_offset',
     amount: offsetAmount,
-    direction: 'income',
+    direction: 'expense',
     operator,
-    changeReason: `出现损耗，押金抵扣赔付 ¥${offsetAmount.toFixed(2)}`,
+    changeReason: `押金抵扣赔付/违约金 ¥${offsetAmount.toFixed(2)}，该笔已计入经营营收`,
     relatedDamageId,
     offsetAmount,
     refundAmount,
-    remark: `往来款-押金部分抵扣，抵扣 ¥${offsetAmount.toFixed(2)}，不计入经营利润`,
+    remark: `往来款押金减少 ¥${offsetAmount.toFixed(2)}，对应经营性收入（赔付/违约金）已在经营流水中独立记录，参与利润核算`,
   }));
 
   if (refundAmount > 0) {

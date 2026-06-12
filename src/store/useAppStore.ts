@@ -74,6 +74,8 @@ import {
   generateDepositCollectFlow,
   generateDepositRefundFullFlow,
   generateDepositRefundPartialFlow,
+  isOperatingIncome,
+  isDepositRelated,
 } from '../utils/finance';
 
 interface AppState {
@@ -191,6 +193,9 @@ interface AppState {
   getDepositFundFlowsByRentalId: (rentalId: string) => DepositFundFlow[];
   getDepositFundFlowsByType: (type: DepositFlowType) => DepositFundFlow[];
   addDepositFundFlows: (flows: DepositFundFlow[]) => void;
+  getOperatingFlows: () => FundFlowRecord[];
+  getDepositFlows: () => FundFlowRecord[];
+  calculateOperatingProfit: () => { operatingIncome: number; operatingExpense: number; operatingProfit: number };
 }
 
 export const useAppStore = create<AppState>()(
@@ -556,8 +561,8 @@ export const useAppStore = create<AppState>()(
                 customerId: rental.customerId,
                 type: 'deposit_forfeit',
                 amount: settlement.forfeitAmount,
-                direction: 'income',
-                description: `扣除押金（违约金: ${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `, 损坏赔偿: ${damageCompensation.toFixed(2)}` : ''}${lossCompensation > 0 ? `, 丢失赔款: ${lossCompensation.toFixed(2)}` : ''}）`,
+                direction: 'expense',
+                description: `押金抵扣（违约金: ${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `, 损坏赔偿: ${damageCompensation.toFixed(2)}` : ''}${lossCompensation > 0 ? `, 丢失赔款: ${lossCompensation.toFixed(2)}` : ''}）- 对应经营性收入已独立记账`,
                 operator,
                 createdAt: now,
               });
@@ -567,10 +572,11 @@ export const useAppStore = create<AppState>()(
                 customerId: rental.customerId,
                 type: 'deposit_forfeit',
                 amount: settlement.forfeitAmount,
-                direction: 'income',
+                direction: 'expense',
                 operator,
-                changeReason: `扣除押金抵扣费用（违约金${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `+损坏赔偿${damageCompensation.toFixed(2)}` : ''}${lossCompensation > 0 ? `+丢失赔款${lossCompensation.toFixed(2)}` : ''}）`,
+                changeReason: `押金预收抵扣费用（违约金${finalPenaltyAmount.toFixed(2)}${damageCompensation > 0 ? `+损坏赔偿${damageCompensation.toFixed(2)}` : ''}${lossCompensation > 0 ? `+丢失赔款${lossCompensation.toFixed(2)}` : ''}），对应经营性收入已独立记录参与利润核算`,
                 relatedDepositId: depositRecord.id,
+                remark: '往来款内部调整：押金预收减少，不计入经营利润，经营性收入已在 damage_compensation/penalty/loss_compensation 流水中独立记录',
               }));
             }
             
@@ -1618,6 +1624,34 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           depositFundFlows: [...state.depositFundFlows, ...flows],
         }));
+      },
+
+      getOperatingFlows: () => {
+        return get().fundFlowRecords.filter((f) => f.isOperating);
+      },
+
+      getDepositFlows: () => {
+        return get().fundFlowRecords.filter((f) => isDepositRelated(f.type));
+      },
+
+      calculateOperatingProfit: () => {
+        const flows = get().fundFlowRecords;
+        let operatingIncome = 0;
+        let operatingExpense = 0;
+        flows.forEach((f) => {
+          if (f.isOperating) {
+            if (f.direction === 'income') {
+              operatingIncome += f.amount;
+            } else {
+              operatingExpense += f.amount;
+            }
+          }
+        });
+        return {
+          operatingIncome,
+          operatingExpense,
+          operatingProfit: operatingIncome - operatingExpense,
+        };
       },
     }),
     {

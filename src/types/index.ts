@@ -351,6 +351,7 @@ export interface FundFlowRecord {
   
   type: TransactionType;
   financeCategory: FinanceCategory;
+  isOperating: boolean;
   amount: number;
   direction: 'income' | 'expense';
   channel?: CustomerChannel;
