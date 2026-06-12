@@ -14,6 +14,8 @@ import type {
   TransactionType,
   CustomerCoupon,
   CustomerChannel,
+  FundFlowOperationType,
+  FundFlowIdempotencyKey,
 } from '../types';
 import { highValueThreshold, generateId } from './format';
 
@@ -578,4 +580,38 @@ export const generateAllIncomeFlows = (
   }
   
   return flows;
+};
+
+export const generateIdempotencyKey = (rentalId: string, operationType: FundFlowOperationType): string => {
+  return `${rentalId}_${operationType}`;
+};
+
+export const createIdempotencyRecord = (
+  rentalId: string,
+  operationType: FundFlowOperationType,
+  flowIds: string[],
+  operator: string
+): FundFlowIdempotencyKey => {
+  const now = new Date().toISOString();
+  return {
+    id: generateIdempotencyKey(rentalId, operationType),
+    rentalId,
+    operationType,
+    flowIds,
+    operator,
+    createdAt: now,
+  };
+};
+
+export const checkIdempotency = (
+  idempotencyKeys: FundFlowIdempotencyKey[],
+  rentalId: string,
+  operationType: FundFlowOperationType
+): { isDuplicate: boolean; record?: FundFlowIdempotencyKey } => {
+  const key = generateIdempotencyKey(rentalId, operationType);
+  const record = idempotencyKeys.find((k) => k.id === key);
+  return {
+    isDuplicate: !!record,
+    record,
+  };
 };

@@ -30,6 +30,8 @@ import type {
   FinanceVoucher,
   VoucherStatus,
   CustomerChannel,
+  FundFlowIdempotencyKey,
+  FundFlowOperationType,
   AddEquipmentInput,
   AddDamageRecordInput,
 } from '../types';
@@ -64,6 +66,9 @@ import {
   generateDepositOffsetFlows,
   generateValueAddedServiceFlows,
   generateAllIncomeFlows,
+  generateIdempotencyKey,
+  createIdempotencyRecord,
+  checkIdempotency,
 } from '../utils/finance';
 
 interface AppState {
@@ -172,6 +177,10 @@ interface AppState {
   getCustomerCoupons: (customerId: string) => CustomerCoupon[];
   useCoupon: (couponId: string, rentalId: string) => boolean;
   addCoupon: (coupon: Omit<CustomerCoupon, 'id' | 'createdAt' | 'isUsed'>) => void;
+  
+  fundFlowIdempotencyKeys: FundFlowIdempotencyKey[];
+  checkFundFlowIdempotency: (rentalId: string, operationType: FundFlowOperationType) => { isDuplicate: boolean; record?: FundFlowIdempotencyKey };
+  addFundFlowIdempotencyKey: (rentalId: string, operationType: FundFlowOperationType, flowIds: string[], operator: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -196,6 +205,7 @@ export const useAppStore = create<AppState>()(
       fundFlowRecords: [],
       customerCoupons: [],
       financeVouchers: [],
+      fundFlowIdempotencyKeys: [],
       
       addEquipment: (equipment) => {
         const now = new Date().toISOString();
@@ -313,6 +323,7 @@ export const useAppStore = create<AppState>()(
           let transactions: FinancialTransaction[] = [];
           let financeDetail: RentalFinanceDetail | null = null;
           let fundFlows: FundFlowRecord[] = [];
+          let newIdempotencyKeys: FundFlowIdempotencyKey[] = [];
           
           if (equipment && customer) {
             const depositAmount = calculateDepositAmount(equipment, state.depositRules);
@@ -347,14 +358,27 @@ export const useAppStore = create<AppState>()(
               depositOffset: 0,
             });
             
-            const rentalIncomeFlows = generateRentalIncomeFlows(newRental, '系统', {
-              channel: newRental.channel,
-              isPackage: newRental.isPackage,
-              packageId: newRental.packageId,
-              baseRentalFee: newRental.price,
-              sceneType: 'new',
-            });
-            fundFlows.push(...rentalIncomeFlows);
+            const idempotencyCheck = checkIdempotency(state.fundFlowIdempotencyKeys, newRentalId, 'new_rental');
+            if (!idempotencyCheck.isDuplicate) {
+              const rentalIncomeFlows = generateRentalIncomeFlows(newRental, '系统', {
+                channel: newRental.channel,
+                isPackage: newRental.isPackage,
+                packageId: newRental.packageId,
+                baseRentalFee: newRental.price,
+                sceneType: 'new',
+              });
+              fundFlows.push(...rentalIncomeFlows);
+              
+              const idempotencyRecord = createIdempotencyRecord(
+                newRentalId,
+                'new_rental',
+                rentalIncomeFlows.map((f) => f.id),
+                '系统'
+              );
+              newIdempotencyKeys.push(idempotencyRecord);
+            } else {
+              console.log(`[幂等控制] 订单 ${newRentalId} 新建流水已生成，跳过重复生成`);
+            }
           }
           
           const newState: any = {
@@ -377,6 +401,10 @@ export const useAppStore = create<AppState>()(
           
           if (fundFlows.length > 0) {
             newState.fundFlowRecords = [...state.fundFlowRecords, ...fundFlows];
+          }
+          
+          if (newIdempotencyKeys.length > 0) {
+            newState.fundFlowIdempotencyKeys = [...state.fundFlowIdempotencyKeys, ...newIdempotencyKeys];
           }
           
           return newState;
@@ -434,6 +462,7 @@ export const useAppStore = create<AppState>()(
           let newTransactions: FinancialTransaction[] = [];
           let newFundFlows: FundFlowRecord[] = [];
           let updatedFinanceDetail: RentalFinanceDetail | null = null;
+          let newIdempotencyKeys: FundFlowIdempotencyKey[] = [];
           
           if (equipment && depositRecord && !depositRecord.isExempt) {
             const calculatedPenalty = calculatePenalty(rental, equipment, state.penaltyRules);
@@ -533,61 +562,76 @@ export const useAppStore = create<AppState>()(
               }));
             }
             
-            const allIncomeFlows = generateAllIncomeFlows(rental, {
-              penalty: newPenalty || undefined,
-              damageCompensation: damageId ? { damageId, amount: damageCompensation, isFullLoss } : undefined,
-              depositOffset: depositOffset > 0 ? { depositId: depositRecord.id, amount: depositOffset, offsetType } : undefined,
-              valueAddedServices: { deliveryFee, cleaningFee, packingFee },
-              rentalIncomeOptions: {
-                channel: rental.channel,
-                isPackage: rental.isPackage,
-                packageId: rental.packageId,
-                baseRentalFee: rental.price - packageDiscount - couponDiscount,
-                sceneType: 'settlement',
-              },
-              operator,
-              onSuccess: (flows) => {
-                console.log(`[财务对账] 租赁订单 ${id} 结算成功，生成 ${flows.length} 条收入流水`);
-                flows.forEach((flow) => {
-                  console.log(`  - 流水号: ${flow.flowNo}, 类型: ${transactionTypeLabels[flow.type]}, 金额: ${flow.amount}, 渠道: ${flow.channel ? customerChannelLabels[flow.channel] : '未标记'}`);
-                });
-              },
-            });
-            newFundFlows.push(...allIncomeFlows);
-            
-            if (lossCompensation > 0 && damageId) {
-              newFundFlows.push(...generateDamageCompensationFlows(
+            const settlementIdempotency = checkIdempotency(state.fundFlowIdempotencyKeys, id, 'settlement');
+            if (!settlementIdempotency.isDuplicate) {
+              const allIncomeFlows = generateAllIncomeFlows(rental, {
+                penalty: newPenalty || undefined,
+                damageCompensation: damageId ? { damageId, amount: damageCompensation, isFullLoss } : undefined,
+                depositOffset: depositOffset > 0 ? { depositId: depositRecord.id, amount: depositOffset, offsetType } : undefined,
+                valueAddedServices: { deliveryFee, cleaningFee, packingFee },
+                rentalIncomeOptions: {
+                  channel: rental.channel,
+                  isPackage: rental.isPackage,
+                  packageId: rental.packageId,
+                  baseRentalFee: rental.price - packageDiscount - couponDiscount,
+                  sceneType: 'settlement',
+                },
+                operator,
+                onSuccess: (flows) => {
+                  console.log(`[财务对账] 租赁订单 ${id} 结算成功，生成 ${flows.length} 条收入流水`);
+                  flows.forEach((flow) => {
+                    console.log(`  - 流水号: ${flow.flowNo}, 类型: ${transactionTypeLabels[flow.type]}, 金额: ${flow.amount}, 渠道: ${flow.channel ? customerChannelLabels[flow.channel] : '未标记'}`);
+                  });
+                },
+              });
+              newFundFlows.push(...allIncomeFlows);
+              
+              if (lossCompensation > 0 && damageId) {
+                const lossFlows = generateDamageCompensationFlows(
+                  id,
+                  rental.customerId,
+                  damageId,
+                  lossCompensation,
+                  true,
+                  operator
+                );
+                newFundFlows.push(...lossFlows);
+                allIncomeFlows.push(...lossFlows);
+              }
+              
+              if (packageDiscount > 0) {
+                newFundFlows.push(createFundFlowRecord({
+                  rentalId: id,
+                  customerId: rental.customerId,
+                  type: 'package_discount',
+                  amount: packageDiscount,
+                  direction: 'expense',
+                  operator,
+                  changeReason: '套餐优惠抵扣',
+                }));
+              }
+              
+              if (couponDiscount > 0) {
+                newFundFlows.push(createFundFlowRecord({
+                  rentalId: id,
+                  customerId: rental.customerId,
+                  type: 'coupon_discount',
+                  amount: couponDiscount,
+                  direction: 'expense',
+                  operator,
+                  changeReason: '客户优惠券抵扣',
+                }));
+              }
+              
+              const settlementIdempotencyRecord = createIdempotencyRecord(
                 id,
-                rental.customerId,
-                damageId,
-                lossCompensation,
-                true,
+                'settlement',
+                allIncomeFlows.map((f) => f.id),
                 operator
-              ));
-            }
-            
-            if (packageDiscount > 0) {
-              newFundFlows.push(createFundFlowRecord({
-                rentalId: id,
-                customerId: rental.customerId,
-                type: 'package_discount',
-                amount: packageDiscount,
-                direction: 'expense',
-                operator,
-                changeReason: '套餐优惠抵扣',
-              }));
-            }
-            
-            if (couponDiscount > 0) {
-              newFundFlows.push(createFundFlowRecord({
-                rentalId: id,
-                customerId: rental.customerId,
-                type: 'coupon_discount',
-                amount: couponDiscount,
-                direction: 'expense',
-                operator,
-                changeReason: '客户优惠券抵扣',
-              }));
+              );
+              newIdempotencyKeys.push(settlementIdempotencyRecord);
+            } else {
+              console.log(`[幂等控制] 订单 ${id} 结算流水已生成，跳过重复生成`);
             }
             
             if (existingFinanceDetail) {
@@ -632,6 +676,7 @@ export const useAppStore = create<AppState>()(
               ? [...state.rentalPenalties, newPenalty]
               : state.rentalPenalties,
             fundFlowRecords: [...state.fundFlowRecords, ...newFundFlows],
+            fundFlowIdempotencyKeys: [...state.fundFlowIdempotencyKeys, ...newIdempotencyKeys],
             rentalFinanceDetails: updatedFinanceDetail
               ? state.rentalFinanceDetails.map((d) => d.id === updatedFinanceDetail!.id ? updatedFinanceDetail! : d)
               : state.rentalFinanceDetails,
@@ -681,15 +726,31 @@ export const useAppStore = create<AppState>()(
           
           let newFundFlows: FundFlowRecord[] = [];
           let newFinanceDetail: RentalFinanceDetail | null = null;
+          let newIdempotencyKeys: FundFlowIdempotencyKey[] = [];
           
-          const rentalIncomeFlows = generateRentalIncomeFlows(newRental, operator, {
-            channel,
-            isPackage,
-            packageId,
-            baseRentalFee: price,
-            sceneType: 'renewal',
-          });
-          newFundFlows.push(...rentalIncomeFlows);
+          const renewalIdempotency = checkIdempotency(state.fundFlowIdempotencyKeys, newRentalId, 'renewal');
+          if (!renewalIdempotency.isDuplicate) {
+            const rentalIncomeFlows = generateRentalIncomeFlows(newRental, operator, {
+              channel,
+              isPackage,
+              packageId,
+              baseRentalFee: price,
+              sceneType: 'renewal',
+            });
+            newFundFlows.push(...rentalIncomeFlows);
+            
+            const idempotencyRecord = createIdempotencyRecord(
+              newRentalId,
+              'renewal',
+              rentalIncomeFlows.map((f) => f.id),
+              operator
+            );
+            newIdempotencyKeys.push(idempotencyRecord);
+            
+            console.log(`[财务对账] 续租成功，生成 ${rentalIncomeFlows.length} 条收入流水，订单: ${newRentalId}`);
+          } else {
+            console.log(`[幂等控制] 续租订单 ${newRentalId} 流水已生成，跳过重复生成`);
+          }
           
           newFinanceDetail = splitRentalFinance(newRental, {
             packageDiscount: 0,
@@ -707,6 +768,7 @@ export const useAppStore = create<AppState>()(
           return {
             rentals: updatedRentals,
             fundFlowRecords: [...state.fundFlowRecords, ...newFundFlows],
+            fundFlowIdempotencyKeys: [...state.fundFlowIdempotencyKeys, ...newIdempotencyKeys],
             rentalFinanceDetails: newFinanceDetail
               ? [...state.rentalFinanceDetails, newFinanceDetail]
               : state.rentalFinanceDetails,
@@ -720,6 +782,12 @@ export const useAppStore = create<AppState>()(
         set((state) => {
           const packageRental = state.rentals.find((r) => r.id === packageRentalId);
           if (!packageRental || !packageRental.isPackage) {
+            return state;
+          }
+          
+          const packageSplitIdempotency = checkIdempotency(state.fundFlowIdempotencyKeys, packageRentalId, 'package_split');
+          if (packageSplitIdempotency.isDuplicate) {
+            console.log(`[幂等控制] 套餐订单 ${packageRentalId} 拆分流水已生成，跳过重复生成`);
             return state;
           }
           
@@ -742,6 +810,13 @@ export const useAppStore = create<AppState>()(
             console.log(`  - 流水号: ${flow.flowNo}, 类型: ${transactionTypeLabels[flow.type]}, 金额: ${flow.amount}, 渠道: ${flow.channel ? customerChannelLabels[flow.channel] : '未标记'}`);
           });
           
+          const idempotencyRecord = createIdempotencyRecord(
+            packageRentalId,
+            'package_split',
+            packageSplitFlows.map((f) => f.id),
+            operator
+          );
+          
           const existingFinanceDetail = state.rentalFinanceDetails.find(
             (d) => d.rentalId === packageRentalId
           );
@@ -762,6 +837,7 @@ export const useAppStore = create<AppState>()(
           
           return {
             fundFlowRecords: [...state.fundFlowRecords, ...packageSplitFlows],
+            fundFlowIdempotencyKeys: [...state.fundFlowIdempotencyKeys, idempotencyRecord],
             rentalFinanceDetails: updatedFinanceDetail,
           };
         });
@@ -1409,6 +1485,19 @@ export const useAppStore = create<AppState>()(
         };
         set((state) => ({
           customerCoupons: [...state.customerCoupons, newCoupon],
+        }));
+      },
+      
+      checkFundFlowIdempotency: (rentalId, operationType) => {
+        const state = get();
+        return checkIdempotency(state.fundFlowIdempotencyKeys, rentalId, operationType);
+      },
+      
+      addFundFlowIdempotencyKey: (rentalId, operationType, flowIds, operator) => {
+        const now = new Date().toISOString();
+        const idempotencyRecord = createIdempotencyRecord(rentalId, operationType, flowIds, operator);
+        set((state) => ({
+          fundFlowIdempotencyKeys: [...state.fundFlowIdempotencyKeys, idempotencyRecord],
         }));
       },
     }),

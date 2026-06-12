@@ -14,6 +14,17 @@ export type DepositRuleType = 'category' | 'equipment' | 'package';
 
 export type CustomerChannel = 'individual' | 'group' | 'online';
 
+export type FundFlowOperationType = 'new_rental' | 'renewal' | 'settlement' | 'package_split' | 'damage_compensation' | 'loss_compensation' | 'penalty' | 'deposit_offset' | 'value_added_service';
+
+export interface FundFlowIdempotencyKey {
+  id: string;
+  rentalId: string;
+  operationType: FundFlowOperationType;
+  flowIds: string[];
+  operator: string;
+  createdAt: string;
+}
+
 export type TransactionType = 
   | 'deposit_collect' 
   | 'deposit_refund' 
